@@ -1,0 +1,6 @@
+node_modules/
+producao.db
+producao.db-shm
+producao.db-wal
+*.lock
+.env
