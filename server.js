@@ -247,7 +247,7 @@ app.put('/api/operators/:id', admin, async (req, res) => {
 });
 
 // REFERENCES
-app.get('/api/references', auth, async (req, res) => {
+app.get('/api/references', async (req, res) => {
   try {
     const mt = req.query.machine_type;
     if (mt) {
@@ -275,7 +275,7 @@ app.put('/api/references/:id', admin, async (req, res) => {
 });
 
 // COLORS
-app.get('/api/colors', auth, async (req, res) => {
+app.get('/api/colors', async (req, res) => {
   try { res.json(await q('SELECT * FROM colors WHERE active=1 ORDER BY name')); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -297,7 +297,7 @@ app.put('/api/colors/:id', admin, async (req, res) => {
 });
 
 // STOPPAGE CODES
-app.get('/api/stoppage-codes', auth, async (req, res) => {
+app.get('/api/stoppage-codes', async (req, res) => {
   try { res.json(await q('SELECT * FROM stoppage_codes WHERE active=1 ORDER BY code')); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -327,7 +327,7 @@ const ORDER_COLS = `po.*,r.code as ref_code,r.name as ref_name,r.weight_per_ml,r
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN machines m ON po.machine_id=m.id`;
 
-app.get('/api/orders', auth, async (req, res) => {
+app.get('/api/orders', async (req, res) => {
   try {
     let sql = 'SELECT ' + ORDER_COLS + ' WHERE 1=1';
     const p = [];
@@ -337,7 +337,7 @@ app.get('/api/orders', auth, async (req, res) => {
     res.json(await q(sql, p));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
-app.get('/api/orders/:id', auth, async (req, res) => {
+app.get('/api/orders/:id', async (req, res) => {
   try {
     const o = await q1('SELECT ' + ORDER_COLS + ' WHERE po.id=$1', [req.params.id]);
     if (!o) return res.status(404).json({ error: 'Ordem nao encontrada' });
@@ -382,7 +382,7 @@ const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN machines m ON s.machine_id=m.id`;
 
-app.get('/api/shifts/active', auth, async (req, res) => {
+app.get('/api/shifts/active', async (req, res) => {
   try {
     const shift = await q1(
       `SELECT ${SHIFT_COLS} WHERE s.machine_id=$1 AND s.date=$2 AND s.shift_number=$3 AND s.status='open' ORDER BY s.created_at DESC LIMIT 1`,
@@ -403,7 +403,7 @@ app.get('/api/shifts', admin, async (req, res) => {
     res.json(await q(sql, p));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
-app.get('/api/shifts/:id', auth, async (req, res) => {
+app.get('/api/shifts/:id', async (req, res) => {
   try {
     const shift = await q1('SELECT ' + SHIFT_COLS + ' WHERE s.id=$1', [req.params.id]);
     if (!shift) return res.status(404).json({ error: 'Turno nao encontrado' });
