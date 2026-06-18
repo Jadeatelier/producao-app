@@ -446,7 +446,17 @@ app.get('/api/shifts/:id', auth, async (req, res) => {
       [req.params.id]
     );
     const weighing = await q('SELECT * FROM weighing_records WHERE shift_id=$1 ORDER BY rolo_number,created_at', [req.params.id]);
-    res.json(Object.assign({}, shift, { entries, stoppages, weighing }));
+    // Totais acumulados da ORDEM (todos os turnos, não apenas o atual)
+    const orderTotals = shift.order_id ? await q1(
+      `SELECT COALESCE(SUM(pe.meters_pieces),0) as total_meters,
+              COALESCE(SUM(pe.pieces_ok),0) as total_pieces_ok,
+              COALESCE(SUM(pe.rolls_bundles),0) as total_rolls
+       FROM production_entries pe
+       JOIN shifts s2 ON pe.shift_id=s2.id
+       WHERE s2.order_id=$1`,
+      [shift.order_id]
+    ) : null;
+    res.json(Object.assign({}, shift, { entries, stoppages, weighing, orderTotals }));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/shifts', auth, async (req, res) => {
@@ -456,8 +466,10 @@ app.post('/api/shifts', auth, async (req, res) => {
     const existing = await q1("SELECT id FROM shifts WHERE machine_id=$1 AND status='open' ORDER BY created_at DESC LIMIT 1",
       [req.body.machine_id]);
     if (existing) return res.json({ id: existing.id, resumed: true });
+    // shift_number pode vir do cliente (operador escolheu); fallback para detecção automática por hora
+    const shiftNum = [1,2,3].includes(Number(req.body.shift_number)) ? Number(req.body.shift_number) : currentShift();
     const r = await q1('INSERT INTO shifts(order_id,operator_id,machine_id,shift_number,date,start_time) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
-      [req.body.order_id, req.user.id, req.body.machine_id, currentShift(), todayStr(), nowTime()]);
+      [req.body.order_id, req.user.id, req.body.machine_id, shiftNum, todayStr(), nowTime()]);
     res.json({ id: r.id, resumed: false });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -678,25 +690,95 @@ app.get('/api/analytics', admin, async (req, res) => {
          JOIN production_orders po ON s.order_id=po.id AND po.cycle_time_seconds>0
          JOIN machines m ON s.machine_id=m.id
          LEFT JOIN operators op ON s.operator_id=op.id
-         LEFT JOIN refs r ON po.reference_id=r.id
-         WHERE pe.start_time IS NOT NULL AND pe.end_time IS NOT NULL AND pe.counter>0
-         ORDER BY s.date DESC,s.shift_number`, [df,dt])
+         WHERE m.type='injecao'
+         ORDER BY s.date DESC,pe.created_at DESC LIMIT 500`, [df,dt])
     ]);
     res.json({ qualityByMachine, qualityByOrder, workerPerf, efficiencyEntries });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// PRODUCTION PROGRESS (admin only)
+app.get('/api/production-progress', admin, async (req, res) => {
+  try {
+    const today = todayStr();
+    const since14 = new Date(Date.now()-14*24*60*60*1000).toISOString().slice(0,10);
+
+    const [orders, daily, orderDaily, stopReasons] = await Promise.all([
+      // Active orders with cumulative production
+      q(`SELECT po.id, po.order_number, po.quantity, po.unit,
+            r.code as ref_code, r.name as ref_name,
+            c.name as color_name, c.hex_code as hex_color,
+            m.name as machine_name,
+            COALESCE(SUM(
+              CASE WHEN m.type='extrусао' OR m.type='extrusao' THEN pe.meters_pieces
+                   ELSE pe.pieces_ok END
+            ),0) as produced,
+            COALESCE(SUM(
+              CASE WHEN m.type='extrusao' THEN pe.rejected
+                   ELSE pe.pieces_rejected END
+            ),0) as rejected,
+            COALESCE(SUM(CASE WHEN s.date=$1 THEN
+              CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE pe.pieces_ok END
+            ELSE 0 END),0) as produced_today,
+            COALESCE((SELECT SUM(st.duration_minutes)
+              FROM stoppages st JOIN shifts s2 ON st.shift_id=s2.id
+              WHERE s2.order_id=po.id AND s2.date=$1),0) as stop_min_today,
+            COUNT(DISTINCT s.id) as shift_count,
+            MAX(s.date) as last_shift_date,
+            COUNT(DISTINCT CASE WHEN s.end_time IS NULL THEN s.id END) as open_shifts
+         FROM production_orders po
+         JOIN machines m ON po.machine_id=m.id
+         LEFT JOIN refs r ON po.reference_id=r.id
+         LEFT JOIN colors c ON po.color_id=c.id
+         LEFT JOIN shifts s ON s.order_id=po.id
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         WHERE po.status='active'
+         GROUP BY po.id,po.order_number,po.quantity,po.unit,r.code,r.name,c.name,c.hex_code,m.name,m.type
+         ORDER BY (CASE WHEN po.quantity>0 THEN
+           COALESCE(SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE pe.pieces_ok END),0)::float/po.quantity
+           ELSE 0 END) DESC`, [today]),
+
+      // Daily production last 14 days
+      q(`SELECT s.date,
+            COALESCE(SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE 0 END),0) as ext_meters,
+            COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE 0 END),0) as inj_pieces,
+            COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_rejected ELSE pe.rejected END),0) as rejected
+         FROM shifts s
+         JOIN machines m ON s.machine_id=m.id
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         WHERE s.date>=$1
+         GROUP BY s.date ORDER BY s.date`, [since14]),
+
+      // Per-order daily breakdown
+      q(`SELECT po.order_number, s.date,
+            COALESCE(SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE pe.pieces_ok END),0) as produced
+         FROM production_orders po
+         JOIN machines m ON po.machine_id=m.id
+         JOIN shifts s ON s.order_id=po.id AND s.date>=$1
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         WHERE po.status='active'
+         GROUP BY po.order_number, s.date ORDER BY s.date`, [since14]),
+
+      // Top stoppage reasons last 14 days
+      q(`SELECT sc.code, sc.description, sc.category,
+            COUNT(*) as cnt,
+            COALESCE(SUM(st.duration_minutes),0) as total_min
+         FROM stoppages st
+         JOIN stop_codes sc ON st.stop_code_id=sc.id
+         JOIN shifts s ON st.shift_id=s.id
+         WHERE s.date>=$1
+         GROUP BY sc.code, sc.description, sc.category
+         ORDER BY total_min DESC LIMIT 10`, [since14])
+    ]);
+
+    res.json({ orders, daily, orderDaily, stopReasons });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// SERVE FRONTEND
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-initDB()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log('Servidor a correr em http://localhost:' + PORT);
-    });
-  })
-  .catch(err => {
-    console.error('Erro ao inicializar base de dados:', err.message);
-    process.exit(1);
-  });
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
