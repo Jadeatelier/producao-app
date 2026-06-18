@@ -195,7 +195,7 @@ app.post('/api/auth/admin', (req, res) => {
   res.json({ token });
 });
 
-app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
+app.get('/api/auth/me', (req, res) => res.json(req.user));
 
 // MACHINES
 app.get('/api/machines', auth, async (req, res) => {
