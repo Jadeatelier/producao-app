@@ -199,13 +199,14 @@ function LoginPage() {
   const [adminPwd, setAdminPwd] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [selShift, setSelShift] = useState(currentShiftNum()); // turno escolhido pelo operador
 
   useEffect(()=>{
     fetch('/api/machines',{headers:api.h()}).then(r=>r.json()).then(setMachines).catch(()=>{});
     fetch('/api/operators/public').then(r=>r.json()).then(setOperators).catch(()=>{});
   },[]);
 
-  const selectMachine = (m) => { setSelMachine(m); setPin(''); setOpNumber(''); setOpSearch(''); setError(''); setStep('pin'); };
+  const selectMachine = (m) => { setSelMachine(m); setPin(''); setOpNumber(''); setOpSearch(''); setError(''); setSelShift(currentShiftNum()); setStep('pin'); };
 
   const submitPin = async () => {
     if(!opNumber||pin.length<4){ setError('Insira o nº de operador e o PIN (4 dígitos)'); return; }
@@ -215,7 +216,11 @@ function LoginPage() {
       login(res.token);
       if(res.operator?.role==='quality') { window.location.hash='#/quality'; }
       else if(step==='quality') { window.location.hash='#/quality'; }
-      else { window.location.hash = `#/operator/${selMachine.id}`; }
+      else {
+        // Guarda o turno escolhido para ser usado ao criar o turno na máquina
+        sessionStorage.setItem('pendingShiftNumber', String(selShift));
+        window.location.hash = `#/operator/${selMachine.id}`;
+      }
     } catch(e){ setError(e.message); } finally{ setLoading(false); }
   };
 
@@ -300,9 +305,22 @@ function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-800 p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
         <button onClick={()=>{setStep('machines');setError('');}} className="text-gray-400 hover:text-gray-600 text-sm mb-4">← Voltar</button>
-        <div className="text-center mb-6">
+        <div className="text-center mb-4">
           <div className={`inline-block px-4 py-1.5 rounded-full text-sm font-bold mb-2 ${selMachine.type==='extrusao'?'bg-blue-100 text-blue-700':'bg-orange-100 text-orange-700'}`}>{selMachine.name}</div>
-          <div className="text-gray-500 text-sm">{SHIFTS[shiftNum]}</div>
+        </div>
+        {/* Seletor de turno — operador confirma em qual turno está */}
+        <div className="mb-4">
+          <div className="text-sm font-semibold text-gray-700 mb-2">Turno</div>
+          <div className="grid grid-cols-3 gap-2">
+            {[1,2,3].map(t=>(
+              <button key={t} onClick={()=>setSelShift(t)}
+                className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${selShift===t?'bg-blue-600 border-blue-600 text-white':'border-gray-200 text-gray-600 hover:border-blue-400 hover:text-blue-600'}`}>
+                <div>T{t}</div>
+                <div className={`text-xs font-normal mt-0.5 ${selShift===t?'text-blue-100':'text-gray-400'}`}>{t===1?'Manhã':t===2?'Tarde':'Noite'}</div>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5 text-center">Confirme o turno em que está a trabalhar</p>
         </div>
         {error&&<div className="mb-4"><Alert type="error">{error}</Alert></div>}
         <div className="mb-4">
@@ -429,7 +447,14 @@ function OperatorPage({machineId}) {
 
   const openShift = async (orderId, mId) => {
     try {
-      const res = await api.post('/api/shifts',{order_id:orderId,machine_id:mId||machineId});
+      // Lê turno escolhido pelo operador no login (apenas na primeira abertura)
+      const pendingShift = sessionStorage.getItem('pendingShiftNumber');
+      sessionStorage.removeItem('pendingShiftNumber');
+      const res = await api.post('/api/shifts',{
+        order_id: orderId,
+        machine_id: mId||machineId,
+        shift_number: pendingShift ? Number(pendingShift) : undefined
+      });
       const detail = await api.get(`/api/shifts/${res.id}`);
       setShift(detail);
       setModal(null);
@@ -554,12 +579,21 @@ function OperatorPage({machineId}) {
             </div>
           </div>
           {shift.quantity>0&&(()=>{
-            const produced = isExtrusao ? entries.reduce((a,e)=>a+(e.meters_pieces||0),0) : entries.reduce((a,e)=>a+(e.pieces_ok||0),0);
-            const pct = Math.min(100, Math.round((produced/shift.quantity)*100));
+            // Usa totais acumulados da ORDEM inteira (todos os turnos anteriores + atual)
+            // Se orderTotals ainda não chegou, faz fallback para as entradas do turno atual
+            const ot = shift.orderTotals;
+            const producedOrder = ot
+              ? (isExtrusao ? Number(ot.total_meters||0) : Number(ot.total_pieces_ok||0))
+              : (isExtrusao ? entries.reduce((a,e)=>a+(e.meters_pieces||0),0) : entries.reduce((a,e)=>a+(e.pieces_ok||0),0));
+            const producedShift = isExtrusao ? entries.reduce((a,e)=>a+(e.meters_pieces||0),0) : entries.reduce((a,e)=>a+(e.pieces_ok||0),0);
+            const pct = Math.min(100, Math.round((producedOrder/shift.quantity)*100));
             return (
               <div className="mt-3">
                 <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span>Progresso: {produced} / {shift.quantity} {UNIT_LABELS[shift.unit]||''}</span>
+                  <span>
+                    Progresso total da ordem: <strong>{producedOrder}</strong> / {shift.quantity} {UNIT_LABELS[shift.unit]||''}
+                    {producedShift>0&&producedOrder>producedShift&&<span className="text-gray-400 ml-1">(este turno: {producedShift})</span>}
+                  </span>
                   <span className="font-bold">{pct}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3">
@@ -922,6 +956,7 @@ function AdminLayout({page,setPage,children}) {
     {id:'operators',icon:'👷',label:'Operadores'},
     {id:'machines',icon:'🏭',label:'Máquinas'},
     {id:'stoppage-codes',icon:'⛔',label:'Códigos Paragem'},
+    {id:'producao',icon:'📦',label:'Análise de Produção'},
     {id:'reports',icon:'📈',label:'Relatórios'},
     {id:'efficiency',icon:'⚡',label:'Eficiência & Qualidade'},
   ];
@@ -2069,6 +2104,271 @@ function EfficiencyPage() {
   );
 }
 
+// ─── PRODUCTION ANALYSIS PAGE ─────────────────────────────────────────────────
+function ProductionAnalysisPage() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const chartDailyRef = useRef(null);
+  const chartDailyInst = useRef(null);
+  const chartStopRef = useRef(null);
+  const chartStopInst = useRef(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try { setData(await api.get('/api/production-progress')); }
+    catch(e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!data?.daily?.length || !chartDailyRef.current) return;
+    if (chartDailyInst.current) chartDailyInst.current.destroy();
+    const labels = data.daily.map(d => d.date.slice(5));
+    chartDailyInst.current = new Chart(chartDailyRef.current, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Extrusão (metros)', data: data.daily.map(d => Number(d.ext_meters)||0), backgroundColor: 'rgba(37,99,235,0.75)', borderRadius: 4, yAxisID: 'y' },
+          { label: 'Injeção (peças)', data: data.daily.map(d => Number(d.inj_pieces)||0), backgroundColor: 'rgba(234,88,12,0.75)', borderRadius: 4, yAxisID: 'y2' },
+          { label: 'Rejeitados', data: data.daily.map(d => Number(d.rejected)||0), backgroundColor: 'rgba(239,68,68,0.6)', borderRadius: 4, yAxisID: 'y' },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Extrusão / Rej.' } },
+          y2: { beginAtZero: true, position: 'right', title: { display: true, text: 'Injeção' }, grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+  }, [data]);
+
+  useEffect(() => {
+    if (!data?.stopReasons?.length || !chartStopRef.current) return;
+    if (chartStopInst.current) chartStopInst.current.destroy();
+    const colors = ['#EF4444','#F97316','#FBBF24','#22C55E','#3B82F6','#8B5CF6','#EC4899','#14B8A6'];
+    chartStopInst.current = new Chart(chartStopRef.current, {
+      type: 'doughnut',
+      data: {
+        labels: data.stopReasons.map(s => `${s.code} — ${s.description}`),
+        datasets: [{ data: data.stopReasons.map(s => Number(s.total_min)||0), backgroundColor: colors, borderWidth: 2 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12 } } }
+      }
+    });
+  }, [data]);
+
+  if (loading) return <div className="flex justify-center py-20"><Spinner/></div>;
+  if (error) return <Alert type="error">{error}</Alert>;
+  if (!data) return null;
+
+  const orders = data.orders || [];
+  const getPct = o => o.quantity > 0 ? Math.min(100, Math.round((Number(o.produced) / Number(o.quantity)) * 100)) : null;
+  const alerts80 = orders.filter(o => { const p = getPct(o); return p !== null && p >= 80 && p < 100; });
+  const alertsDone = orders.filter(o => { const p = getPct(o); return p !== null && p >= 100; });
+  const totalProducedToday = orders.reduce((a,o) => a + (Number(o.produced_today)||0), 0);
+  const totalStopToday = orders.reduce((a,o) => a + (Number(o.stop_min_today)||0), 0);
+  const openShifts = orders.reduce((a,o) => a + (Number(o.open_shifts)||0), 0);
+
+  const barColor = p => p >= 100 ? 'bg-green-500' : p >= 80 ? 'bg-orange-500' : p >= 50 ? 'bg-blue-500' : p >= 20 ? 'bg-blue-400' : 'bg-gray-300';
+  const borderColor = p => p >= 100 ? 'border-l-green-500' : p >= 80 ? 'border-l-orange-500' : 'border-l-blue-400';
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">📦 Análise de Produção</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Progresso das ordens ativas · Últimos 14 dias</p>
+        </div>
+        <Btn variant="outline" onClick={load} size="sm">↺ Atualizar</Btn>
+      </div>
+
+      {/* Alerta 80%+ */}
+      {alerts80.length > 0 && (
+        <div className="bg-orange-50 border border-orange-300 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">⚠️</span>
+            <span className="font-bold text-orange-800 text-base">
+              {alerts80.length} ordem{alerts80.length>1?'s':''} acima de 80% — preparar conclusão
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {alerts80.map(o => {
+              const p = getPct(o);
+              return (
+                <div key={o.id} className="bg-white rounded-lg border border-orange-200 p-3 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center font-extrabold text-lg bg-orange-100 text-orange-700 shrink-0">{p}%</div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-gray-900 truncate">{o.ref_name||o.ref_code||'—'}</div>
+                    <div className="text-xs text-gray-500">{o.order_number} · {o.machine_name}</div>
+                    <div className="text-xs text-orange-600 font-medium mt-0.5">
+                      {Number(o.produced).toFixed(0)} / {o.quantity} {UNIT_LABELS[o.unit]||''} produzidos
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Ordens concluídas */}
+      {alertsDone.length > 0 && (
+        <div className="bg-green-50 border border-green-300 rounded-xl p-3 flex items-center gap-3">
+          <span className="text-xl">✅</span>
+          <span className="font-semibold text-green-800">
+            {alertsDone.length} ordem{alertsDone.length>1?'s':''} concluída{alertsDone.length>1?'s':''}: {alertsDone.map(o=>o.order_number).join(', ')} — fechar e atualizar estado
+          </span>
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard label="Ordens ativas" value={orders.length} color="blue"/>
+        <KpiCard label="Turnos abertos agora" value={openShifts} color={openShifts>0?'green':'gray'}/>
+        <KpiCard label="Produzido hoje" value={totalProducedToday.toFixed(0)} color="blue" sub="metros + peças OK"/>
+        <KpiCard label="Paragens hoje" value={`${totalStopToday} min`} color={totalStopToday>120?'red':'amber'}/>
+      </div>
+
+      {/* Progresso por ordem */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="font-bold text-gray-900">Progresso por Ordem</h2>
+          <span className="text-xs text-gray-400">{orders.length} ativas</span>
+        </div>
+        {orders.length === 0 ? (
+          <EmptyState icon="📦" title="Sem ordens ativas" desc="Crie uma ordem de produção para começar"/>
+        ) : (
+          <div className="divide-y">
+            {orders.map(o => {
+              const p = getPct(o);
+              const hasQty = o.quantity > 0;
+              return (
+                <div key={o.id} className={`p-4 border-l-4 ${borderColor(p||0)}`}>
+                  <div className="flex items-start justify-between gap-4 mb-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-gray-900">{o.ref_name||o.order_number}</span>
+                        {o.ref_code && <span className="font-mono text-xs text-gray-400">{o.ref_code}</span>}
+                        {o.color_name && (
+                          <span className="flex items-center gap-1 text-xs text-gray-500">
+                            <span className="w-3 h-3 rounded-full inline-block border" style={{background:o.hex_color||'#6B7280'}}/>
+                            {o.color_name}
+                          </span>
+                        )}
+                        {Number(o.open_shifts)>0 && (
+                          <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">● Em produção</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {o.order_number} · {o.machine_name||'—'}
+                        {o.last_shift_date && <span className="ml-2">Último turno: {o.last_shift_date}</span>}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      {hasQty ? (
+                        <>
+                          <div className={`text-2xl font-extrabold ${p>=100?'text-green-600':p>=80?'text-orange-600':'text-blue-600'}`}>{p}%</div>
+                          <div className="text-xs text-gray-400">{Number(o.produced).toFixed(0)} / {o.quantity} {UNIT_LABELS[o.unit]||''}</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-xl font-bold text-gray-700">{Number(o.produced).toFixed(0)}</div>
+                          <div className="text-xs text-gray-400">{UNIT_LABELS[o.unit]||'unid.'} (sem objetivo)</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {hasQty && (
+                    <div>
+                      <div className="w-full bg-gray-100 rounded-full h-2.5">
+                        <div className={`h-2.5 rounded-full transition-all ${barColor(p)}`} style={{width:`${Math.min(100,p)}%`}}/>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>
+                          {Number(o.shift_count)} turno{Number(o.shift_count)!==1?'s':''}
+                          {Number(o.rejected)>0 && <span className="text-red-400 ml-2">· {Number(o.rejected).toFixed(0)} rej.</span>}
+                          {Number(o.produced_today)>0 && <span className="text-blue-500 ml-2">· hoje: +{Number(o.produced_today).toFixed(0)}</span>}
+                        </span>
+                        <span>{Number(o.quantity)-Number(o.produced)>0 ? `Faltam ${(Number(o.quantity)-Number(o.produced)).toFixed(0)} ${UNIT_LABELS[o.unit]||''}` : '✓ Concluído'}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Gráficos */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl shadow-sm p-4">
+          <h2 className="font-bold text-gray-900 mb-3">Produção diária — últimos 14 dias</h2>
+          {data.daily?.length > 0
+            ? <div className="chart-container"><canvas ref={chartDailyRef}/></div>
+            : <EmptyState icon="📊" title="Sem dados no período"/>}
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-4">
+          <h2 className="font-bold text-gray-900 mb-3">Paragens por motivo — últimos 14 dias</h2>
+          {data.stopReasons?.length > 0
+            ? <div className="chart-container"><canvas ref={chartStopRef}/></div>
+            : <EmptyState icon="⏸️" title="Sem paragens registadas"/>}
+        </div>
+      </div>
+
+      {/* Tabela paragens */}
+      {data.stopReasons?.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="p-4 border-b font-bold text-gray-900">Top Motivos de Paragem (14 dias)</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">Cód.</th>
+                  <th className="px-4 py-2.5 text-left">Descrição</th>
+                  <th className="px-4 py-2.5 text-left">Categoria</th>
+                  <th className="px-4 py-2.5 text-right">Ocorrências</th>
+                  <th className="px-4 py-2.5 text-right">Tempo total</th>
+                  <th className="px-4 py-2.5 text-right">Média/ocorr.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.stopReasons.map((s,i) => (
+                  <tr key={s.code} className="border-t table-row">
+                    <td className="px-4 py-2.5 font-mono font-bold text-gray-700">{s.code}</td>
+                    <td className="px-4 py-2.5">{s.description}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{s.category}</td>
+                    <td className="px-4 py-2.5 text-right">{s.cnt}</td>
+                    <td className="px-4 py-2.5 text-right font-medium">
+                      <span className={i===0?'text-red-600':i===1?'text-orange-500':''}>{s.total_min} min</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-500">{Math.round(s.total_min/s.cnt)} min</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-gray-50 font-bold text-sm border-t">
+                <tr>
+                  <td className="px-4 py-2.5" colSpan={3}>Total</td>
+                  <td className="px-4 py-2.5 text-right">{data.stopReasons.reduce((a,s)=>a+Number(s.cnt),0)}</td>
+                  <td className="px-4 py-2.5 text-right">{data.stopReasons.reduce((a,s)=>a+Number(s.total_min),0)} min</td>
+                  <td/>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
 function AdminApp() {
   const [page,setPage] = useState(()=>{
@@ -2077,7 +2377,7 @@ function AdminApp() {
     return 'dashboard';
   });
   useEffect(()=>{ window.location.hash = '#/admin/'+page; },[page]);
-  const pages = { dashboard:<Dashboard/>, orders:<OrdersPage/>, references:<ReferencesPage/>, colors:<ColorsPage/>, operators:<OperatorsPage/>, machines:<MachinesPage/>, 'stoppage-codes':<StopCodesPage/>, reports:<ReportsPage/>, efficiency:<EfficiencyPage/> };
+  const pages = { dashboard:<Dashboard/>, producao:<ProductionAnalysisPage/>, orders:<OrdersPage/>, references:<ReferencesPage/>, colors:<ColorsPage/>, operators:<OperatorsPage/>, machines:<MachinesPage/>, 'stoppage-codes':<StopCodesPage/>, reports:<ReportsPage/>, efficiency:<EfficiencyPage/> };
   return <AdminLayout page={page} setPage={setPage}>{pages[page]||<Dashboard/>}</AdminLayout>;
 }
 
@@ -2091,17 +2391,10 @@ function App() {
   },[]);
 
   if(!user) return <LoginPage/>;
-
-  // Qualidade: apenas por role
   if(user.role==='quality') return <QualityPage/>;
-
-  // Admin
   if(user.role==='admin') return <AdminApp/>;
-
-  // Operador
   const m = hash.match(/#\/operator\/(\d+)/);
   if(m) return <OperatorPage machineId={Number(m[1])}/>;
-
   return <LoginPage/>;
 }
 
