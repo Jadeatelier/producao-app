@@ -124,6 +124,15 @@ async function initDB() {
     );
   `);
 
+  // Migrations — add new columns safely
+  await pool.query(`ALTER TABLE operators ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'operator'`);
+  await pool.query(`ALTER TABLE production_orders ADD COLUMN IF NOT EXISTS cycle_time_seconds INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS start_time TEXT`);
+  await pool.query(`ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS end_time TEXT`);
+  await pool.query(`ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS validated INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS validated_by TEXT`);
+  await pool.query(`ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS validated_at TIMESTAMP`);
+
   const { rows } = await pool.query('SELECT COUNT(*) as c FROM machines');
   if (parseInt(rows[0].c) === 0) {
     await pool.query(`
@@ -174,6 +183,15 @@ function admin(req, res, next) {
     req.user = u; next();
   } catch(e) { res.status(401).json({ error: 'Token invalido' }); }
 }
+function quality(req, res, next) {
+  const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Sem autorizacao' });
+  try {
+    const u = jwt.verify(token, JWT_SECRET);
+    if (u.role !== 'quality' && u.role !== 'admin') return res.status(403).json({ error: 'Sem permissao' });
+    req.user = u; next();
+  } catch(e) { res.status(401).json({ error: 'Token invalido' }); }
+}
 
 // AUTH
 app.post('/api/auth/operator', async (req, res) => {
@@ -183,8 +201,9 @@ app.post('/api/auth/operator', async (req, res) => {
     const op = await q1('SELECT * FROM operators WHERE number=$1 AND active=1', [number]);
     if (!op || !bcrypt.compareSync(pin, op.pin_hash))
       return res.status(401).json({ error: 'Numero ou PIN incorretos' });
-    const token = jwt.sign({ id: op.id, name: op.name, number: op.number, role: 'operator' }, JWT_SECRET, { expiresIn: '12h' });
-    res.json({ token, operator: { id: op.id, name: op.name, number: op.number } });
+    const role = op.role || 'operator';
+    const token = jwt.sign({ id: op.id, name: op.name, number: op.number, role }, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ token, operator: { id: op.id, name: op.name, number: op.number, role } });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -226,14 +245,14 @@ app.get('/api/operators/public', async (req, res) => {
 
 // OPERATORS
 app.get('/api/operators', admin, async (req, res) => {
-  try { res.json(await q('SELECT id,name,number,active,created_at FROM operators ORDER BY name')); }
+  try { res.json(await q('SELECT id,name,number,role,active,created_at FROM operators ORDER BY name')); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/operators', admin, async (req, res) => {
   try {
     const b = req.body;
-    const r = await q1('INSERT INTO operators(name,number,pin_hash) VALUES($1,$2,$3) RETURNING id',
-      [b.name, b.number, bcrypt.hashSync(String(b.pin), 10)]);
+    const r = await q1('INSERT INTO operators(name,number,pin_hash,role) VALUES($1,$2,$3,$4) RETURNING id',
+      [b.name, b.number, bcrypt.hashSync(String(b.pin), 10), b.role||'operator']);
     res.json({ id: r.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -241,11 +260,11 @@ app.put('/api/operators/:id', admin, async (req, res) => {
   try {
     const b = req.body;
     if (b.pin) {
-      await pool.query('UPDATE operators SET name=$1,number=$2,pin_hash=$3,active=$4 WHERE id=$5',
-        [b.name, b.number, bcrypt.hashSync(String(b.pin),10), b.active?1:0, req.params.id]);
+      await pool.query('UPDATE operators SET name=$1,number=$2,pin_hash=$3,role=$4,active=$5 WHERE id=$6',
+        [b.name, b.number, bcrypt.hashSync(String(b.pin),10), b.role||'operator', b.active?1:0, req.params.id]);
     } else {
-      await pool.query('UPDATE operators SET name=$1,number=$2,active=$3 WHERE id=$4',
-        [b.name, b.number, b.active?1:0, req.params.id]);
+      await pool.query('UPDATE operators SET name=$1,number=$2,role=$3,active=$4 WHERE id=$5',
+        [b.name, b.number, b.role||'operator', b.active?1:0, req.params.id]);
     }
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -352,25 +371,25 @@ app.get('/api/orders/:id', auth, async (req, res) => {
 app.post('/api/orders', admin, async (req, res) => {
   try {
     const b = req.body;
-    const r = await q1('INSERT INTO production_orders(order_number,reference_id,color_id,machine_id,quantity,unit,mp_phases,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
-      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', JSON.stringify(b.mp_phases||[]), b.notes||null]);
+    const r = await q1('INSERT INTO production_orders(order_number,reference_id,color_id,machine_id,quantity,unit,mp_phases,cycle_time_seconds,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
+      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', JSON.stringify(b.mp_phases||[]), b.cycle_time_seconds||0, b.notes||null]);
     res.json({ id: r.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.put('/api/orders/:id', admin, async (req, res) => {
   try {
     const b = req.body;
-    await pool.query('UPDATE production_orders SET order_number=$1,reference_id=$2,color_id=$3,machine_id=$4,quantity=$5,unit=$6,mp_phases=$7,notes=$8,status=$9 WHERE id=$10',
-      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', JSON.stringify(b.mp_phases||[]), b.notes||null, b.status||'active', req.params.id]);
+    await pool.query('UPDATE production_orders SET order_number=$1,reference_id=$2,color_id=$3,machine_id=$4,quantity=$5,unit=$6,mp_phases=$7,cycle_time_seconds=$8,notes=$9,status=$10 WHERE id=$11',
+      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', JSON.stringify(b.mp_phases||[]), b.cycle_time_seconds||0, b.notes||null, b.status||'active', req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 function currentShift() {
   const h = new Date().getHours();
-  if (h >= 6 && h < 14) return 1;
-  if (h >= 14 && h < 22) return 2;
-  return 3;
+  if (h >= 8 && h < 17) return 1;   // 08:00 - 16:59
+  if (h >= 17 || h === 0) return 2;  // 17:00 - 00:59
+  return 3;                           // 01:00 - 07:59
 }
 function todayStr() { return new Date().toISOString().split('T')[0]; }
 function nowTime() { return new Date().toTimeString().slice(0,5); }
@@ -446,15 +465,50 @@ app.post('/api/production-entries', auth, async (req, res) => {
   try {
     const b = req.body;
     const r = await q1(
-      'INSERT INTO production_entries(shift_id,color,rolls_bundles,meters_pieces,rejected,active_cavities,counter,pieces_ok,pieces_rejected,finishing,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
-      [b.shift_id, b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null]
+      'INSERT INTO production_entries(shift_id,color,rolls_bundles,meters_pieces,rejected,active_cavities,counter,pieces_ok,pieces_rejected,finishing,start_time,end_time,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
+      [b.shift_id, b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.start_time||null, b.end_time||null, b.notes||null]
     );
     res.json({ id: r.id });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/production-entries/:id', quality, async (req, res) => {
+  try {
+    const b = req.body;
+    await pool.query('UPDATE production_entries SET color=$1,rolls_bundles=$2,meters_pieces=$3,rejected=$4,active_cavities=$5,counter=$6,pieces_ok=$7,pieces_rejected=$8,finishing=$9,start_time=$10,end_time=$11,notes=$12 WHERE id=$13',
+      [b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.start_time||null, b.end_time||null, b.notes||null, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/production-entries/:id/validate', quality, async (req, res) => {
+  try {
+    const by = req.user.name ? `${req.user.name} (#${req.user.number})` : 'Qualidade';
+    await pool.query('UPDATE production_entries SET validated=1,validated_by=$1,validated_at=NOW() WHERE id=$2', [by, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/production-entries/:id/unvalidate', quality, async (req, res) => {
+  try {
+    await pool.query('UPDATE production_entries SET validated=0,validated_by=NULL,validated_at=NULL WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.delete('/api/production-entries/:id', auth, async (req, res) => {
   try { await pool.query('DELETE FROM production_entries WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// QUALITY REVIEW
+app.get('/api/quality/shifts', quality, async (req, res) => {
+  try {
+    const date = req.query.date || todayStr();
+    const shifts = await q(`SELECT ${SHIFT_COLS} WHERE s.date=$1 ORDER BY m.type,m.name,s.shift_number`, [date]);
+    const result = [];
+    for (const s of shifts) {
+      const entries = await q('SELECT * FROM production_entries WHERE shift_id=$1 ORDER BY id', [s.id]);
+      result.push({...s, entries});
+    }
+    res.json(result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // WEIGHING
@@ -528,6 +582,69 @@ app.get('/api/reports', admin, async (req, res) => {
     if (req.query.machine_id) { sql += ` AND s.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
     sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.code,r.name ORDER BY s.date DESC,s.shift_number';
     res.json(await q(sql, p));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ANALYTICS
+app.get('/api/analytics', admin, async (req, res) => {
+  try {
+    const df = req.query.date_from || new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10);
+    const dt = req.query.date_to || todayStr();
+
+    const [qualityByMachine, qualityByOrder, workerPerf, efficiencyEntries] = await Promise.all([
+      // Quality rate per machine
+      q(`SELECT m.id,m.name as machine_name,m.type as machine_type,
+          COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE pe.meters_pieces END),0) as total_ok,
+          COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_rejected ELSE pe.rejected END),0) as total_rejected
+         FROM machines m
+         LEFT JOIN shifts s ON s.machine_id=m.id AND s.date>=$1 AND s.date<=$2
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         WHERE m.active=1
+         GROUP BY m.id,m.name,m.type ORDER BY m.type,m.name`, [df,dt]),
+
+      // Quality rate per production order
+      q(`SELECT po.order_number,po.cycle_time_seconds,r.code as ref_code,r.name as ref_name,
+          m.name as machine_name,m.type as machine_type,
+          COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE pe.meters_pieces END),0) as total_ok,
+          COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_rejected ELSE pe.rejected END),0) as total_rejected,
+          COUNT(DISTINCT s.id) as shift_count
+         FROM production_orders po
+         LEFT JOIN machines m ON po.machine_id=m.id
+         LEFT JOIN refs r ON po.reference_id=r.id
+         LEFT JOIN shifts s ON s.order_id=po.id AND s.date>=$1 AND s.date<=$2
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         GROUP BY po.id,po.order_number,po.cycle_time_seconds,r.code,r.name,m.name,m.type
+         HAVING COUNT(DISTINCT s.id)>0 ORDER BY po.order_number`, [df,dt]),
+
+      // Worker performance (injection only — pieces based)
+      q(`SELECT op.id,op.name as operator_name,op.number as operator_number,
+          COUNT(DISTINCT s.id) as shift_count,
+          COALESCE(SUM(pe.pieces_ok),0) as total_ok,
+          COALESCE(SUM(pe.pieces_rejected),0) as total_rejected,
+          COALESCE(SUM(pe.counter),0) as total_counter
+         FROM operators op
+         JOIN shifts s ON s.operator_id=op.id AND s.date>=$1 AND s.date<=$2
+         JOIN machines m ON s.machine_id=m.id AND m.type='injecao'
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         GROUP BY op.id,op.name,op.number
+         ORDER BY total_ok DESC`, [df,dt]),
+
+      // Entries with cycle time for performance calculation
+      q(`SELECT pe.id,pe.counter,pe.pieces_ok,pe.pieces_rejected,pe.start_time,pe.end_time,
+          po.cycle_time_seconds,po.order_number,r.code as ref_code,
+          m.name as machine_name,op.name as operator_name,op.number as operator_number,
+          s.shift_number,s.date
+         FROM production_entries pe
+         JOIN shifts s ON pe.shift_id=s.id AND s.date>=$1 AND s.date<=$2
+         JOIN production_orders po ON s.order_id=po.id AND po.cycle_time_seconds>0
+         JOIN machines m ON s.machine_id=m.id
+         LEFT JOIN operators op ON s.operator_id=op.id
+         LEFT JOIN refs r ON po.reference_id=r.id
+         WHERE pe.start_time IS NOT NULL AND pe.end_time IS NOT NULL AND pe.counter>0
+         ORDER BY s.date DESC,s.shift_number`, [df,dt])
+    ]);
+
+    res.json({ qualityByMachine, qualityByOrder, workerPerf, efficiencyEntries });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
