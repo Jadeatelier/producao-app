@@ -3,23 +3,23 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
- 
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
- 
+
 const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const PORT = process.env.PORT || 3000;
- 
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
- 
+
 const q = (sql, params = []) => pool.query(sql, params).then(r => r.rows);
 const q1 = (sql, params = []) => pool.query(sql, params).then(r => r.rows[0] || null);
- 
+
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS machines (
@@ -123,7 +123,7 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
- 
+
   const { rows } = await pool.query('SELECT COUNT(*) as c FROM machines');
   if (parseInt(rows[0].c) === 0) {
     await pool.query(`
@@ -158,7 +158,7 @@ async function initDB() {
     console.log('Base de dados inicializada com dados de exemplo');
   }
 }
- 
+
 function auth(req, res, next) {
   const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Sem autorizacao' });
@@ -174,7 +174,7 @@ function admin(req, res, next) {
     req.user = u; next();
   } catch(e) { res.status(401).json({ error: 'Token invalido' }); }
 }
- 
+
 // AUTH
 app.post('/api/auth/operator', async (req, res) => {
   try {
@@ -187,15 +187,15 @@ app.post('/api/auth/operator', async (req, res) => {
     res.json({ token, operator: { id: op.id, name: op.name, number: op.number } });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.post('/api/auth/admin', (req, res) => {
   if (req.body.password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Password incorreta' });
   const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '8h' });
   res.json({ token });
 });
- 
+
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
- 
+
 // MACHINES — público para o login
 app.get('/api/machines', async (req, res) => {
   try { res.json(await q('SELECT * FROM machines WHERE active=1 ORDER BY type,name')); }
@@ -217,7 +217,13 @@ app.put('/api/machines/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
+// OPERATORS - público (só nome+número) para o ecrã de login
+app.get('/api/operators/public', async (req, res) => {
+  try { res.json(await q('SELECT name, number FROM operators WHERE active=1 ORDER BY name')); }
+  catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // OPERATORS
 app.get('/api/operators', admin, async (req, res) => {
   try { res.json(await q('SELECT id,name,number,active,created_at FROM operators ORDER BY name')); }
@@ -244,7 +250,7 @@ app.put('/api/operators/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // REFERENCES
 app.get('/api/references', auth, async (req, res) => {
   try {
@@ -272,7 +278,7 @@ app.put('/api/references/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // COLORS
 app.get('/api/colors', auth, async (req, res) => {
   try { res.json(await q('SELECT * FROM colors WHERE active=1 ORDER BY name')); }
@@ -294,7 +300,7 @@ app.put('/api/colors/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // STOPPAGE CODES
 app.get('/api/stoppage-codes', auth, async (req, res) => {
   try { res.json(await q('SELECT * FROM stoppage_codes WHERE active=1 ORDER BY code')); }
@@ -316,7 +322,7 @@ app.put('/api/stoppage-codes/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // ORDERS
 const ORDER_COLS = `po.*,r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,
   r.raw_material as ref_raw_material,c.name as color_name,c.hex_color,c.code as color_code,
@@ -325,7 +331,7 @@ const ORDER_COLS = `po.*,r.code as ref_code,r.name as ref_name,r.weight_per_ml,r
   LEFT JOIN refs r ON po.reference_id=r.id
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN machines m ON po.machine_id=m.id`;
- 
+
 app.get('/api/orders', auth, async (req, res) => {
   try {
     let sql = 'SELECT ' + ORDER_COLS + ' WHERE 1=1';
@@ -359,7 +365,7 @@ app.put('/api/orders/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 function currentShift() {
   const h = new Date().getHours();
   if (h >= 6 && h < 14) return 1;
@@ -368,7 +374,7 @@ function currentShift() {
 }
 function todayStr() { return new Date().toISOString().split('T')[0]; }
 function nowTime() { return new Date().toTimeString().slice(0,5); }
- 
+
 const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   po.order_number,po.unit,po.status as order_status,
   r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,
@@ -380,7 +386,7 @@ const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   LEFT JOIN refs r ON po.reference_id=r.id
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN machines m ON s.machine_id=m.id`;
- 
+
 app.get('/api/shifts/active', auth, async (req, res) => {
   try {
     const shift = await q1(
@@ -434,7 +440,7 @@ app.put('/api/shifts/:id/close', auth, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // PRODUCTION ENTRIES
 app.post('/api/production-entries', auth, async (req, res) => {
   try {
@@ -450,7 +456,7 @@ app.delete('/api/production-entries/:id', auth, async (req, res) => {
   try { await pool.query('DELETE FROM production_entries WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // WEIGHING
 app.post('/api/weighing', auth, async (req, res) => {
   try {
@@ -464,7 +470,7 @@ app.delete('/api/weighing/:id', auth, async (req, res) => {
   try { await pool.query('DELETE FROM weighing_records WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // STOPPAGES
 app.post('/api/stoppages', auth, async (req, res) => {
   try {
@@ -478,7 +484,7 @@ app.delete('/api/stoppages/:id', auth, async (req, res) => {
   try { await pool.query('DELETE FROM stoppages WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // DASHBOARD
 app.get('/api/dashboard', admin, async (req, res) => {
   try {
@@ -497,7 +503,7 @@ app.get('/api/dashboard', admin, async (req, res) => {
     res.json({ todayProd, todayStops, machines, topStops, daily, stopCats });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // REPORTS
 app.get('/api/reports', admin, async (req, res) => {
   try {
@@ -524,11 +530,11 @@ app.get('/api/reports', admin, async (req, res) => {
     res.json(await q(sql, p));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
- 
+
 initDB()
   .then(() => {
     app.listen(PORT, () => {
