@@ -5,20 +5,43 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const PORT = process.env.PORT || 3000;
 
+if (!process.env.JWT_SECRET || !process.env.ADMIN_PASSWORD) {
+  console.warn('⚠️  AVISO: Definir JWT_SECRET e ADMIN_PASSWORD como variáveis de ambiente no Render!');
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-const q = (sql, params = []) => pool.query(sql, params).then(r => r.rows);
+const q  = (sql, params = []) => pool.query(sql, params).then(r => r.rows);
 const q1 = (sql, params = []) => pool.query(sql, params).then(r => r.rows[0] || null);
+
+// Rate limiting em memória para o login
+const _loginAttempts = {};
+setInterval(() => {
+  const now = Date.now();
+  for (const k in _loginAttempts) {
+    if (_loginAttempts[k].resetAt < now) delete _loginAttempts[k];
+  }
+}, 60000);
+function checkRateLimit(key) {
+  const now = Date.now();
+  if (!_loginAttempts[key] || _loginAttempts[key].resetAt < now) {
+    _loginAttempts[key] = { count: 1, resetAt: now + 15 * 60 * 1000 };
+    return false;
+  }
+  _loginAttempts[key].count++;
+  return _loginAttempts[key].count > 5;
+}
+function clearRateLimit(key) { delete _loginAttempts[key]; }
 
 async function initDB() {
   await pool.query(`
@@ -124,7 +147,6 @@ async function initDB() {
     );
   `);
 
-  // Migrations — add new columns safely
   await pool.query(`ALTER TABLE operators ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'operator'`);
   await pool.query(`ALTER TABLE production_orders ADD COLUMN IF NOT EXISTS cycle_time_seconds INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS start_time TEXT`);
@@ -137,33 +159,21 @@ async function initDB() {
   if (parseInt(rows[0].c) === 0) {
     await pool.query(`
       INSERT INTO machines (name,type,has_weighing) VALUES
-        ('Extrusao 1','extrusao',0),
-        ('Extrusao 2','extrusao',1),
-        ('Extrusao 3','extrusao',0),
-        ('Injecao 1','injecao',0),
-        ('Injecao 2','injecao',0),
-        ('Injecao 3','injecao',0)
+        ('Extrusao 1','extrusao',0),('Extrusao 2','extrusao',1),('Extrusao 3','extrusao',0),
+        ('Injecao 1','injecao',0),('Injecao 2','injecao',0),('Injecao 3','injecao',0)
     `);
     await pool.query(`
       INSERT INTO stoppage_codes (code,description,category) VALUES
-        ('01','Mudanca de cor','Producao'),
-        ('02','Mudanca de referencia','Producao'),
-        ('03','Regulacao / Afinacao','Producao'),
-        ('04','Avaria mecanica','Avaria'),
-        ('05','Avaria eletrica','Avaria'),
-        ('06','Limpeza de maquina','Manutencao'),
-        ('07','Manutencao preventiva','Manutencao'),
-        ('08','Falta de materia-prima','Material'),
-        ('09','Pausa / Intervalo','Pessoal'),
-        ('10','Falta de energia','Infraestrutura'),
-        ('11','Troca de molde','Producao'),
-        ('99','Outros','Geral')
+        ('01','Mudanca de cor','Producao'),('02','Mudanca de referencia','Producao'),
+        ('03','Regulacao / Afinacao','Producao'),('04','Avaria mecanica','Avaria'),
+        ('05','Avaria eletrica','Avaria'),('06','Limpeza de maquina','Manutencao'),
+        ('07','Manutencao preventiva','Manutencao'),('08','Falta de materia-prima','Material'),
+        ('09','Pausa / Intervalo','Pessoal'),('10','Falta de energia','Infraestrutura'),
+        ('11','Troca de molde','Producao'),('99','Outros','Geral')
     `);
     const pin_hash = bcrypt.hashSync('1234', 10);
-    await pool.query(
-      'INSERT INTO operators (name,number,pin_hash) VALUES ($1,$2,$3)',
-      ['Operador Demo', '001', pin_hash]
-    );
+    await pool.query('INSERT INTO operators (name,number,pin_hash) VALUES ($1,$2,$3)',
+      ['Operador Demo', '001', pin_hash]);
     console.log('Base de dados inicializada com dados de exemplo');
   }
 }
@@ -198,9 +208,12 @@ app.post('/api/auth/operator', async (req, res) => {
   try {
     const { number, pin } = req.body;
     if (!number || !pin) return res.status(400).json({ error: 'Numero e PIN obrigatorios' });
+    if (checkRateLimit(`op:${number}`))
+      return res.status(429).json({ error: 'Muitas tentativas falhadas. Aguarde 15 minutos.' });
     const op = await q1('SELECT * FROM operators WHERE number=$1 AND active=1', [number]);
     if (!op || !bcrypt.compareSync(pin, op.pin_hash))
       return res.status(401).json({ error: 'Numero ou PIN incorretos' });
+    clearRateLimit(`op:${number}`);
     const role = op.role || 'operator';
     const token = jwt.sign({ id: op.id, name: op.name, number: op.number, role }, JWT_SECRET, { expiresIn: '12h' });
     res.json({ token, operator: { id: op.id, name: op.name, number: op.number, role } });
@@ -215,7 +228,7 @@ app.post('/api/auth/admin', (req, res) => {
 
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
 
-// MACHINES — público para o login
+// MACHINES
 app.get('/api/machines', async (req, res) => {
   try { res.json(await q('SELECT * FROM machines WHERE active=1 ORDER BY type,name')); }
   catch(e) { res.status(500).json({ error: e.message }); }
@@ -237,13 +250,11 @@ app.put('/api/machines/:id', admin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// OPERATORS - público (só nome+número) para o ecrã de login
+// OPERATORS
 app.get('/api/operators/public', async (req, res) => {
   try { res.json(await q('SELECT name, number FROM operators WHERE active=1 ORDER BY name')); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
-
-// OPERATORS
 app.get('/api/operators', admin, async (req, res) => {
   try { res.json(await q('SELECT id,name,number,role,active,created_at FROM operators ORDER BY name')); }
   catch(e) { res.status(500).json({ error: e.message }); }
@@ -274,11 +285,8 @@ app.put('/api/operators/:id', admin, async (req, res) => {
 app.get('/api/references', auth, async (req, res) => {
   try {
     const mt = req.query.machine_type;
-    if (mt) {
-      res.json(await q('SELECT * FROM refs WHERE active=1 AND machine_type=$1 ORDER BY code', [mt]));
-    } else {
-      res.json(await q('SELECT * FROM refs WHERE active=1 ORDER BY code'));
-    }
+    if (mt) res.json(await q('SELECT * FROM refs WHERE active=1 AND machine_type=$1 ORDER BY code', [mt]));
+    else    res.json(await q('SELECT * FROM refs WHERE active=1 ORDER BY code'));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/references', admin, async (req, res) => {
@@ -355,7 +363,7 @@ app.get('/api/orders', auth, async (req, res) => {
   try {
     let sql = 'SELECT ' + ORDER_COLS + ' WHERE 1=1';
     const p = [];
-    if (req.query.status) { sql += ` AND po.status=$${p.length+1}`; p.push(req.query.status); }
+    if (req.query.status)     { sql += ` AND po.status=$${p.length+1}`; p.push(req.query.status); }
     if (req.query.machine_id) { sql += ` AND po.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
     sql += ' ORDER BY po.created_at DESC';
     res.json(await q(sql, p));
@@ -387,15 +395,15 @@ app.put('/api/orders/:id', admin, async (req, res) => {
 
 function currentShift() {
   const h = new Date().getHours();
-  if (h >= 8 && h < 17) return 1;   // 08:00 - 16:59
-  if (h >= 17 || h === 0) return 2;  // 17:00 - 00:59
-  return 3;                           // 01:00 - 07:59
+  if (h >= 8 && h < 17) return 1;
+  if (h >= 17 || h === 0) return 2;
+  return 3;
 }
 function todayStr() { return new Date().toISOString().split('T')[0]; }
-function nowTime() { return new Date().toTimeString().slice(0,5); }
+function nowTime()  { return new Date().toTimeString().slice(0,5); }
 
 const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
-  po.order_number,po.unit,po.status as order_status,
+  po.order_number,po.quantity,po.unit,po.status as order_status,
   r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,
   c.name as color_name,c.code as color_code,c.hex_color,
   m.name as machine_name,m.type as machine_type,m.has_weighing
@@ -408,9 +416,10 @@ const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
 
 app.get('/api/shifts/active', auth, async (req, res) => {
   try {
+    // Procura turno aberto mais recente (sem filtrar por data/shift — evita bug de meia-noite)
     const shift = await q1(
-      `SELECT ${SHIFT_COLS} WHERE s.machine_id=$1 AND s.date=$2 AND s.shift_number=$3 AND s.status='open' ORDER BY s.created_at DESC LIMIT 1`,
-      [req.query.machine_id, todayStr(), currentShift()]
+      `SELECT ${SHIFT_COLS} WHERE s.machine_id=$1 AND s.status='open' ORDER BY s.created_at DESC LIMIT 1`,
+      [req.query.machine_id]
     );
     res.json(shift || null);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -419,9 +428,9 @@ app.get('/api/shifts', admin, async (req, res) => {
   try {
     let sql = 'SELECT ' + SHIFT_COLS + ' WHERE 1=1';
     const p = [];
-    if (req.query.date) { sql += ` AND s.date=$${p.length+1}`; p.push(req.query.date); }
-    if (req.query.date_from) { sql += ` AND s.date>=$${p.length+1}`; p.push(req.query.date_from); }
-    if (req.query.date_to) { sql += ` AND s.date<=$${p.length+1}`; p.push(req.query.date_to); }
+    if (req.query.date)       { sql += ` AND s.date=$${p.length+1}`; p.push(req.query.date); }
+    if (req.query.date_from)  { sql += ` AND s.date>=$${p.length+1}`; p.push(req.query.date_from); }
+    if (req.query.date_to)    { sql += ` AND s.date<=$${p.length+1}`; p.push(req.query.date_to); }
     if (req.query.machine_id) { sql += ` AND s.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
     sql += ' ORDER BY s.date DESC,s.shift_number';
     res.json(await q(sql, p));
@@ -431,7 +440,7 @@ app.get('/api/shifts/:id', auth, async (req, res) => {
   try {
     const shift = await q1('SELECT ' + SHIFT_COLS + ' WHERE s.id=$1', [req.params.id]);
     if (!shift) return res.status(404).json({ error: 'Turno nao encontrado' });
-    const entries = await q('SELECT * FROM production_entries WHERE shift_id=$1 ORDER BY created_at', [req.params.id]);
+    const entries   = await q('SELECT * FROM production_entries WHERE shift_id=$1 ORDER BY created_at', [req.params.id]);
     const stoppages = await q(
       'SELECT st.*,sc.code as stop_code,sc.description as stop_desc,sc.category FROM stoppages st LEFT JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id WHERE st.shift_id=$1 ORDER BY st.created_at',
       [req.params.id]
@@ -444,8 +453,8 @@ app.post('/api/shifts', auth, async (req, res) => {
   try {
     const order = await q1("SELECT * FROM production_orders WHERE id=$1 AND status='active'", [req.body.order_id]);
     if (!order) return res.status(400).json({ error: 'Ordem nao encontrada ou nao ativa' });
-    const existing = await q1("SELECT id FROM shifts WHERE machine_id=$1 AND date=$2 AND shift_number=$3 AND status='open'",
-      [req.body.machine_id, todayStr(), currentShift()]);
+    const existing = await q1("SELECT id FROM shifts WHERE machine_id=$1 AND status='open' ORDER BY created_at DESC LIMIT 1",
+      [req.body.machine_id]);
     if (existing) return res.json({ id: existing.id, resumed: true });
     const r = await q1('INSERT INTO shifts(order_id,operator_id,machine_id,shift_number,date,start_time) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
       [req.body.order_id, req.user.id, req.body.machine_id, currentShift(), todayStr(), nowTime()]);
@@ -454,6 +463,10 @@ app.post('/api/shifts', auth, async (req, res) => {
 });
 app.put('/api/shifts/:id/close', auth, async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      const shift = await q1('SELECT id FROM shifts WHERE id=$1 AND operator_id=$2', [req.params.id, req.user.id]);
+      if (!shift) return res.status(403).json({ error: 'Sem permissao para fechar este turno' });
+    }
     await pool.query("UPDATE shifts SET status='closed',end_time=$1,notes=$2 WHERE id=$3",
       [nowTime(), (req.body && req.body.notes)||null, req.params.id]);
     res.json({ ok: true });
@@ -464,18 +477,25 @@ app.put('/api/shifts/:id/close', auth, async (req, res) => {
 app.post('/api/production-entries', auth, async (req, res) => {
   try {
     const b = req.body;
+    const pieces_ok       = Math.max(0, Number(b.pieces_ok)||0);
+    const pieces_rejected = Math.max(0, Number(b.pieces_rejected)||0);
+    const rolls_bundles   = Math.max(0, Number(b.rolls_bundles)||0);
+    const meters_pieces   = Math.max(0, Number(b.meters_pieces)||0);
+    const rejected        = Math.max(0, Number(b.rejected)||0);
+    const counter         = (b.counter !== null && b.counter !== '') ? Math.max(0, Number(b.counter)) : null;
+    const active_cavities = b.active_cavities ? Math.max(0, Number(b.active_cavities)) : null;
     const r = await q1(
-      'INSERT INTO production_entries(shift_id,color,rolls_bundles,meters_pieces,rejected,active_cavities,counter,pieces_ok,pieces_rejected,finishing,start_time,end_time,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
-      [b.shift_id, b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.start_time||null, b.end_time||null, b.notes||null]
+      'INSERT INTO production_entries(shift_id,color,rolls_bundles,meters_pieces,rejected,active_cavities,counter,pieces_ok,pieces_rejected,finishing,start_time,end_time,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id,created_at',
+      [b.shift_id, b.color||null, rolls_bundles, meters_pieces, rejected, active_cavities, counter, pieces_ok, pieces_rejected, b.finishing||null, b.start_time||null, b.end_time||null, b.notes||null]
     );
-    res.json({ id: r.id });
+    res.json({ id: r.id, created_at: r.created_at });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.put('/api/production-entries/:id', quality, async (req, res) => {
   try {
     const b = req.body;
     await pool.query('UPDATE production_entries SET color=$1,rolls_bundles=$2,meters_pieces=$3,rejected=$4,active_cavities=$5,counter=$6,pieces_ok=$7,pieces_rejected=$8,finishing=$9,start_time=$10,end_time=$11,notes=$12 WHERE id=$13',
-      [b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.start_time||null, b.end_time||null, b.notes||null, req.params.id]);
+      [b.color||null, Math.max(0,Number(b.rolls_bundles)||0), Math.max(0,Number(b.meters_pieces)||0), Math.max(0,Number(b.rejected)||0), b.active_cavities?Math.max(0,Number(b.active_cavities)):null, (b.counter!==''&&b.counter!==null)?Math.max(0,Number(b.counter)):null, Math.max(0,Number(b.pieces_ok)||0), Math.max(0,Number(b.pieces_rejected)||0), b.finishing||null, b.start_time||null, b.end_time||null, b.notes||null, req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -493,11 +513,20 @@ app.put('/api/production-entries/:id/unvalidate', quality, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.delete('/api/production-entries/:id', auth, async (req, res) => {
-  try { await pool.query('DELETE FROM production_entries WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'quality') {
+      const entry = await q1(
+        `SELECT pe.id FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE pe.id=$1 AND s.operator_id=$2`,
+        [req.params.id, req.user.id]
+      );
+      if (!entry) return res.status(403).json({ error: 'Sem permissao para apagar este registo' });
+    }
+    await pool.query('DELETE FROM production_entries WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// QUALITY REVIEW
+// QUALITY
 app.get('/api/quality/shifts', quality, async (req, res) => {
   try {
     const date = req.query.date || todayStr();
@@ -521,8 +550,17 @@ app.post('/api/weighing', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.delete('/api/weighing/:id', auth, async (req, res) => {
-  try { await pool.query('DELETE FROM weighing_records WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'quality') {
+      const rec = await q1(
+        `SELECT wr.id FROM weighing_records wr JOIN shifts s ON wr.shift_id=s.id WHERE wr.id=$1 AND s.operator_id=$2`,
+        [req.params.id, req.user.id]
+      );
+      if (!rec) return res.status(403).json({ error: 'Sem permissao para apagar esta pesagem' });
+    }
+    await pool.query('DELETE FROM weighing_records WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // STOPPAGES
@@ -535,8 +573,17 @@ app.post('/api/stoppages', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.delete('/api/stoppages/:id', auth, async (req, res) => {
-  try { await pool.query('DELETE FROM stoppages WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'quality') {
+      const stop = await q1(
+        `SELECT st.id FROM stoppages st JOIN shifts s ON st.shift_id=s.id WHERE st.id=$1 AND s.operator_id=$2`,
+        [req.params.id, req.user.id]
+      );
+      if (!stop) return res.status(403).json({ error: 'Sem permissao para apagar esta paragem' });
+    }
+    await pool.query('DELETE FROM stoppages WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // DASHBOARD
@@ -564,7 +611,7 @@ app.get('/api/reports', admin, async (req, res) => {
     let sql = `SELECT s.id,s.date,s.shift_number,s.start_time,s.end_time,s.status,
       m.name as machine_name,m.type as machine_type,
       op.name as operator_name,op.number as operator_number,
-      po.order_number,r.code as ref_code,r.name as ref_name,
+      po.order_number,r.id as reference_id,r.code as ref_code,r.name as ref_name,
       SUM(pe.rolls_bundles) as total_rolls,SUM(pe.meters_pieces) as total_meters,
       SUM(pe.pieces_ok) as total_pieces_ok,SUM(pe.rejected+pe.pieces_rejected) as total_rejected,
       (SELECT SUM(st2.duration_minutes) FROM stoppages st2 WHERE st2.shift_id=s.id) as stop_min,
@@ -577,10 +624,11 @@ app.get('/api/reports', admin, async (req, res) => {
       LEFT JOIN production_entries pe ON pe.shift_id=s.id
       WHERE 1=1`;
     const p = [];
-    if (req.query.date_from) { sql += ` AND s.date>=$${p.length+1}`; p.push(req.query.date_from); }
-    if (req.query.date_to) { sql += ` AND s.date<=$${p.length+1}`; p.push(req.query.date_to); }
-    if (req.query.machine_id) { sql += ` AND s.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
-    sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.code,r.name ORDER BY s.date DESC,s.shift_number';
+    if (req.query.date_from)    { sql += ` AND s.date>=$${p.length+1}`; p.push(req.query.date_from); }
+    if (req.query.date_to)      { sql += ` AND s.date<=$${p.length+1}`; p.push(req.query.date_to); }
+    if (req.query.machine_id)   { sql += ` AND s.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
+    if (req.query.reference_id) { sql += ` AND po.reference_id=$${p.length+1}`; p.push(req.query.reference_id); }
+    sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.id,r.code,r.name ORDER BY s.date DESC,s.shift_number';
     res.json(await q(sql, p));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -589,10 +637,8 @@ app.get('/api/reports', admin, async (req, res) => {
 app.get('/api/analytics', admin, async (req, res) => {
   try {
     const df = req.query.date_from || new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10);
-    const dt = req.query.date_to || todayStr();
-
+    const dt = req.query.date_to   || todayStr();
     const [qualityByMachine, qualityByOrder, workerPerf, efficiencyEntries] = await Promise.all([
-      // Quality rate per machine
       q(`SELECT m.id,m.name as machine_name,m.type as machine_type,
           COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE pe.meters_pieces END),0) as total_ok,
           COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_rejected ELSE pe.rejected END),0) as total_rejected
@@ -601,8 +647,6 @@ app.get('/api/analytics', admin, async (req, res) => {
          LEFT JOIN production_entries pe ON pe.shift_id=s.id
          WHERE m.active=1
          GROUP BY m.id,m.name,m.type ORDER BY m.type,m.name`, [df,dt]),
-
-      // Quality rate per production order
       q(`SELECT po.order_number,po.cycle_time_seconds,r.code as ref_code,r.name as ref_name,
           m.name as machine_name,m.type as machine_type,
           COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE pe.meters_pieces END),0) as total_ok,
@@ -615,8 +659,6 @@ app.get('/api/analytics', admin, async (req, res) => {
          LEFT JOIN production_entries pe ON pe.shift_id=s.id
          GROUP BY po.id,po.order_number,po.cycle_time_seconds,r.code,r.name,m.name,m.type
          HAVING COUNT(DISTINCT s.id)>0 ORDER BY po.order_number`, [df,dt]),
-
-      // Worker performance (injection only — pieces based)
       q(`SELECT op.id,op.name as operator_name,op.number as operator_number,
           COUNT(DISTINCT s.id) as shift_count,
           COALESCE(SUM(pe.pieces_ok),0) as total_ok,
@@ -626,11 +668,8 @@ app.get('/api/analytics', admin, async (req, res) => {
          JOIN shifts s ON s.operator_id=op.id AND s.date>=$1 AND s.date<=$2
          JOIN machines m ON s.machine_id=m.id AND m.type='injecao'
          LEFT JOIN production_entries pe ON pe.shift_id=s.id
-         GROUP BY op.id,op.name,op.number
-         ORDER BY total_ok DESC`, [df,dt]),
-
-      // Entries with cycle time for performance calculation
-      q(`SELECT pe.id,pe.counter,pe.pieces_ok,pe.pieces_rejected,pe.start_time,pe.end_time,
+         GROUP BY op.id,op.name,op.number ORDER BY total_ok DESC`, [df,dt]),
+      q(`SELECT pe.id,pe.counter,pe.pieces_ok,pe.pieces_rejected,pe.start_time,pe.end_time,pe.created_at,
           po.cycle_time_seconds,po.order_number,r.code as ref_code,
           m.name as machine_name,op.name as operator_name,op.number as operator_number,
           s.shift_number,s.date
@@ -643,7 +682,6 @@ app.get('/api/analytics', admin, async (req, res) => {
          WHERE pe.start_time IS NOT NULL AND pe.end_time IS NOT NULL AND pe.counter>0
          ORDER BY s.date DESC,s.shift_number`, [df,dt])
     ]);
-
     res.json({ qualityByMachine, qualityByOrder, workerPerf, efficiencyEntries });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -656,8 +694,6 @@ initDB()
   .then(() => {
     app.listen(PORT, () => {
       console.log('Servidor a correr em http://localhost:' + PORT);
-      console.log('Password admin: ' + ADMIN_PASSWORD);
-      console.log('Operador demo: No 001, PIN 1234');
     });
   })
   .catch(err => {
