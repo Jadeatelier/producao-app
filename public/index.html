@@ -403,6 +403,8 @@ function OperatorPage({machineId}) {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // 'entry'|'stoppage'|'weighing'|'order'|'close'
   const [error, setError] = useState('');
+  const [palletEntry, setPalletEntry] = useState(null); // entry para mostrar código palete
+  const [confirmDel, setConfirmDel] = useState(null); // {type:'entry'|'stop'|'weigh', id}
 
   const load = useCallback(async () => {
     try {
@@ -454,6 +456,13 @@ function OperatorPage({machineId}) {
   };
   const delWeigh = async (id) => {
     try { await api.del(`/api/weighing/${id}`); await refresh(); } catch(e){ setError(e.message); }
+  };
+  const execDel = async () => {
+    if(!confirmDel) return;
+    if(confirmDel.type==='entry') await delEntry(confirmDel.id);
+    else if(confirmDel.type==='stop') await delStop(confirmDel.id);
+    else if(confirmDel.type==='weigh') await delWeigh(confirmDel.id);
+    setConfirmDel(null);
   };
 
   if(loading) return <div className="min-h-screen flex items-center justify-center"><Spinner/></div>;
@@ -623,7 +632,10 @@ function OperatorPage({machineId}) {
                       <td className="px-4 py-2.5 text-right text-gray-500 text-xs">{e.start_time||e.created_at?.slice(11,16)||'—'}</td>
                       <td className="px-4 py-2.5 text-right text-gray-500 text-xs">{e.end_time||'—'}</td>
                       <td className="px-4 py-2.5 text-right">
-                        <button onClick={()=>delEntry(e.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                        <div className="flex items-center gap-1 justify-end">
+                          <button onClick={()=>setPalletEntry(e)} className="text-purple-400 hover:text-purple-600 text-xs" title="Ver código de palete">🏷️</button>
+                          <button onClick={()=>setConfirmDel({type:'entry',id:e.id})} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -673,7 +685,7 @@ function OperatorPage({machineId}) {
                     <td className="px-4 py-2.5 text-right font-medium">{s.duration_minutes} min</td>
                     <td className="px-4 py-2.5 text-gray-400 text-xs">{s.notes||'—'}</td>
                     <td className="px-4 py-2.5 text-right">
-                      <button onClick={()=>delStop(s.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                      <button onClick={()=>setConfirmDel({type:'stop',id:s.id})} className="text-red-400 hover:text-red-600 text-xs">✕</button>
                     </td>
                   </tr>
                 ))}
@@ -708,7 +720,7 @@ function OperatorPage({machineId}) {
                       <td className="px-4 py-2.5 text-right font-medium">{w.weight_kg}</td>
                       <td className="px-4 py-2.5 text-gray-400 text-xs">{w.notes||'—'}</td>
                       <td className="px-4 py-2.5 text-right">
-                        <button onClick={()=>delWeigh(w.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                        <button onClick={()=>setConfirmDel({type:'weigh',id:w.id})} className="text-red-400 hover:text-red-600 text-xs">✕</button>
                       </td>
                     </tr>
                   ))}
@@ -724,17 +736,21 @@ function OperatorPage({machineId}) {
       <AddStoppageModal open={modal==='stoppage'} onClose={()=>setModal(null)} codes={codes} onSave={async(d)=>{ await api.post('/api/stoppages',{shift_id:shift.id,...d}); await refresh(); setModal(null); }}/>
       {isExtrusao&&shift.has_weighing===1&&<AddWeighingModal open={modal==='weighing'} onClose={()=>setModal(null)} weighing={weighing} onSave={async(d)=>{ await api.post('/api/weighing',{shift_id:shift.id,...d}); await refresh(); setModal(null); }}/>}
       <ConfirmModal open={modal==='close'} onClose={()=>setModal(null)} onConfirm={closeShift} title="Fechar turno" message="Confirmar o fecho do turno? Esta ação não pode ser desfeita." variant="danger"/>
+      <PalletCodeModal open={!!palletEntry} onClose={()=>setPalletEntry(null)} entry={palletEntry} shift={shift}/>
+      <ConfirmModal open={!!confirmDel} onClose={()=>setConfirmDel(null)} onConfirm={execDel} title="Apagar registo" message="Tem a certeza? Esta ação não pode ser desfeita." variant="danger"/>
     </div>
   );
 }
 
 function PalletCodeModal({open,onClose,entry,shift}) {
   if(!open||!entry||!shift) return null;
-  const d = new Date();
+  // Usa created_at do registo (data real) em vez de new Date()
+  const d = entry.created_at ? new Date(entry.created_at) : new Date();
   const dd = String(d.getDate()).padStart(2,'0');
   const mm = String(d.getMonth()+1).padStart(2,'0');
   const yy = String(d.getFullYear()).slice(2);
-  const code = `T${shift.shift_number}-${dd}${mm}${yy}-${shift.operator_number}-${String(entry.id).padStart(4,'0')}`;
+  const opNum = String(shift.operator_number||'000').padStart(3,'0');
+  const code = `T${shift.shift_number}-${dd}${mm}${yy}-${opNum}-${String(entry.id).padStart(4,'0')}`;
   return (
     <Modal open={open} onClose={onClose} title="Código de Palete" size="sm">
       <div className="text-center py-2">
@@ -1366,13 +1382,13 @@ function OperatorForm({open,onClose,onSave,editing}) {
   );
 }
 
-// ─── MACHINES PAGE ───────────────────────────────────────────────────────────
+// ─── MACHINES PAGE ────────────────────────────────────────────────────────────
 function MachinesPage() {
   const [data,setData] = useState([]);
   const [loading,setLoading] = useState(true);
   const [modal,setModal] = useState(null);
   const [editing,setEditing] = useState(null);
-  const load = async()=>{ setLoading(true); try{const r=await fetch('/api/machines',{headers:api.h()}); setData(await r.json());}finally{setLoading(false);} };
+  const load = async()=>{ setLoading(true); try{setData(await api.get('/api/machines'));}finally{setLoading(false);} };
   useEffect(()=>{ load(); },[]);
   const save = async(form)=>{ if(editing) await api.put(`/api/machines/${editing.id}`,form); else await api.post('/api/machines',form); await load(); setModal(null); setEditing(null); };
   const cols = [
@@ -1389,24 +1405,23 @@ function MachinesPage() {
   );
 }
 function MachineForm({open,onClose,onSave,editing}) {
-  const [form,setForm] = useState({name:'',type:'extrusao',has_weighing:0,notes:'',active:1});
+  const empty = {name:'',type:'extrusao',has_weighing:0,notes:'',active:1};
+  const [form,setForm] = useState(empty);
   const [loading,setLoading] = useState(false);
-  useEffect(()=>{ setForm(editing?{...editing}:{name:'',type:'extrusao',has_weighing:0,notes:'',active:1}); },[editing,open]);
+  useEffect(()=>{ setForm(editing?{...editing}:empty); },[editing,open]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=async()=>{ setLoading(true); try{await onSave({...form,active:form.active?1:0,has_weighing:form.has_weighing?1:0});}finally{setLoading(false);} };
+  const submit=async()=>{ setLoading(true); try{await onSave({...form,has_weighing:form.has_weighing?1:0,active:form.active?1:0});}finally{setLoading(false);} };
   return (
     <Modal open={open} onClose={onClose} title={editing?'Editar Máquina':'Nova Máquina'} size="sm">
       <div className="space-y-4">
-        <Input label="Nome" required value={form.name} onChange={e=>set('name',e.target.value)} placeholder="ex: Extrusão 1"/>
+        <Input label="Nome" required value={form.name} onChange={e=>set('name',e.target.value)} placeholder="ex: Extrusão 4"/>
         <Select label="Tipo" value={form.type} onChange={e=>set('type',e.target.value)} options={[{value:'extrusao',label:'Extrusão'},{value:'injecao',label:'Injeção'}]}/>
-        <Field label="Registo de Pesagem">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={!!form.has_weighing} onChange={e=>set('has_weighing',e.target.checked?1:0)} className="w-4 h-4 rounded"/>
-            <span className="text-sm">Esta máquina regista pesagem de rolos</span>
-          </label>
-        </Field>
-        <Textarea label="Notas" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
+        <div className="flex items-center gap-3">
+          <input type="checkbox" id="hw" checked={!!form.has_weighing} onChange={e=>set('has_weighing',e.target.checked?1:0)} className="w-4 h-4 rounded"/>
+          <label htmlFor="hw" className="text-sm font-medium text-gray-700">Tem módulo de pesagem</label>
+        </div>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativa'},{value:0,label:'Inativa'}]}/>}
+        <Textarea label="Notas" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
           <Btn onClick={submit} disabled={loading||!form.name}>{loading?'A guardar…':'Guardar'}</Btn>
@@ -1417,7 +1432,7 @@ function MachineForm({open,onClose,onSave,editing}) {
 }
 
 // ─── STOPPAGE CODES PAGE ──────────────────────────────────────────────────────
-function StoppageCodesPage() {
+function StopCodesPage() {
   const [data,setData] = useState([]);
   const [loading,setLoading] = useState(true);
   const [modal,setModal] = useState(null);
@@ -1439,20 +1454,20 @@ function StoppageCodesPage() {
   );
 }
 function StopCodeForm({open,onClose,onSave,editing}) {
-  const [form,setForm] = useState({code:'',description:'',category:'Geral',active:1});
+  const empty = {code:'',description:'',category:'Geral',active:1};
+  const [form,setForm] = useState(empty);
   const [loading,setLoading] = useState(false);
-  useEffect(()=>{ setForm(editing?{...editing}:{code:'',description:'',category:'Geral',active:1}); },[editing,open]);
+  useEffect(()=>{ setForm(editing?{...editing}:empty); },[editing,open]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const cats = ['Produção','Avaria','Manutenção','Material','Pessoal','Infraestrutura','Geral'];
   const submit=async()=>{ setLoading(true); try{await onSave({...form,active:form.active?1:0});}finally{setLoading(false);} };
   return (
     <Modal open={open} onClose={onClose} title={editing?'Editar Código':'Novo Código de Paragem'} size="sm">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Código" required value={form.code} onChange={e=>set('code',e.target.value)} placeholder="ex: 01"/>
-          <Select label="Categoria" value={form.category} onChange={e=>set('category',e.target.value)} options={cats.map(c=>({value:c,label:c}))}/>
+          <Input label="Código" required value={form.code} onChange={e=>set('code',e.target.value)} placeholder="ex: 12"/>
+          <Input label="Categoria" value={form.category} onChange={e=>set('category',e.target.value)} placeholder="ex: Avaria"/>
         </div>
-        <Input label="Descrição" required value={form.description} onChange={e=>set('description',e.target.value)} placeholder="ex: Mudança de cor"/>
+        <Input label="Descrição" required value={form.description} onChange={e=>set('description',e.target.value)} placeholder="ex: Avaria hidráulica"/>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativo'},{value:0,label:'Inativo'}]}/>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
@@ -1463,95 +1478,366 @@ function StopCodeForm({open,onClose,onSave,editing}) {
   );
 }
 
-// ─── REPORTS PAGE ────────────────────────────────────────────────────────────
-function ReportsPage() {
-  const [data,setData] = useState([]);
-  const [loading,setLoading] = useState(false);
-  const [machines,setMachines] = useState([]);
-  const [filter,setFilter] = useState({date_from:new Date(Date.now()-6*86400000).toISOString().split('T')[0],date_to:new Date().toISOString().split('T')[0],machine_id:''});
+// ─── HELPER: CÓDIGO DE PALETE ─────────────────────────────────────────────────
+function buildPalletCode(entry, shift) {
+  const d = entry && entry.created_at ? new Date(entry.created_at) : new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yy = String(d.getFullYear()).slice(2);
+  const opNum = String(shift.operator_number||'000').padStart(3,'0');
+  return `T${shift.shift_number}-${dd}${mm}${yy}-${opNum}-${String(entry.id).padStart(4,'0')}`;
+}
 
-  useEffect(()=>{ api.get('/api/machines').then(setMachines).catch(()=>{}); },[]);
+// PalletCodeModal atualizado para usar buildPalletCode e created_at
+function PalletCodeModalV2({open,onClose,entry,shift}) {
+  if(!open||!entry||!shift) return null;
+  const code = buildPalletCode(entry, shift);
+  const d = entry.created_at ? new Date(entry.created_at) : new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yy = String(d.getFullYear()).slice(2);
+  return (
+    <Modal open={open} onClose={onClose} title="Código de Palete" size="sm">
+      <div className="text-center py-2">
+        <div className="bg-gray-900 text-green-400 rounded-xl p-6 font-mono mb-4">
+          <div className="text-xs text-gray-500 mb-2 uppercase tracking-widest">Código de Palete</div>
+          <div className="text-3xl font-extrabold tracking-widest">{code}</div>
+        </div>
+        <div className="text-left bg-gray-50 rounded-xl p-4 text-sm space-y-1.5 mb-4">
+          <div className="flex justify-between"><span className="text-gray-500">Produto:</span><span className="font-semibold">{shift.ref_name||shift.ref_code||'—'}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Ref.:</span><span className="font-mono text-xs">{shift.ref_code||'—'}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Data:</span><span>{dd}/{mm}/{yy}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Turno:</span><span>{SHIFTS[shift.shift_number]}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Operador:</span><span>{shift.operator_name} (#{shift.operator_number})</span></div>
+          {entry.pieces_ok>0&&<div className="flex justify-between"><span className="text-gray-500">Peças OK:</span><span className="font-bold text-green-700">{entry.pieces_ok}</span></div>}
+          {entry.meters_pieces>0&&<div className="flex justify-between"><span className="text-gray-500">Metros/Peças:</span><span className="font-bold">{entry.meters_pieces}</span></div>}
+        </div>
+        <p className="text-xs text-gray-400 mb-4">Escreva este código na etiqueta da palete</p>
+        <Btn className="w-full" onClick={onClose}>Fechar</Btn>
+      </div>
+    </Modal>
+  );
+}
 
-  const load = async () => {
-    setLoading(true);
+// ─── QUALITY PAGE ─────────────────────────────────────────────────────────────
+function QualityPage() {
+  const {logout} = useAuth();
+  const [date,setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [shifts,setShifts] = useState([]);
+  const [loading,setLoading] = useState(true);
+  const [editing,setEditing] = useState(null);
+  const [editForm,setEditForm] = useState({});
+  const [saving,setSaving] = useState(false);
+  const [error,setError] = useState('');
+  const [palletData,setPalletData] = useState(null); // {entry, shift}
+
+  const load = useCallback(async()=>{
+    setLoading(true); setError('');
+    try { setShifts(await api.get(`/api/quality/shifts?date=${date}`)); }
+    catch(e){ setError(e.message); }
+    finally{ setLoading(false); }
+  },[date]);
+  useEffect(()=>{ load(); },[load]);
+
+  const startEdit = (entry, shift) => {
+    setEditing({entry, shift});
+    setEditForm({
+      color: entry.color||'',
+      rolls_bundles: entry.rolls_bundles||0,
+      meters_pieces: entry.meters_pieces||0,
+      rejected: entry.rejected||0,
+      active_cavities: entry.active_cavities||'',
+      counter: entry.counter||'',
+      pieces_ok: entry.pieces_ok||0,
+      pieces_rejected: entry.pieces_rejected||0,
+      finishing: entry.finishing||'',
+      start_time: entry.start_time||'',
+      end_time: entry.end_time||'',
+      notes: entry.notes||''
+    });
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try { await api.put(`/api/production-entries/${editing.entry.id}`, editForm); await load(); setEditing(null); }
+    catch(e){ setError(e.message); }
+    finally{ setSaving(false); }
+  };
+
+  const toggleValidate = async (entry) => {
     try {
-      const p = new URLSearchParams();
-      if(filter.date_from) p.set('date_from',filter.date_from);
-      if(filter.date_to) p.set('date_to',filter.date_to);
-      if(filter.machine_id) p.set('machine_id',filter.machine_id);
-      setData(await api.get(`/api/reports?${p}`));
-    } finally{ setLoading(false); }
+      if(entry.validated) await api.put(`/api/production-entries/${entry.id}/unvalidate`,{});
+      else await api.put(`/api/production-entries/${entry.id}/validate`,{});
+      await load();
+    } catch(e){ setError(e.message); }
   };
 
-  useEffect(()=>{ load(); },[]);
-
-  const totals = data.reduce((a,r)=>({rolls:a.rolls+(r.total_rolls||0),meters:a.meters+(r.total_meters||0),ok:a.ok+(r.total_pieces_ok||0),rej:a.rej+(r.total_rejected||0),stop:a.stop+(r.stop_min||0)}),{rolls:0,meters:0,ok:0,rej:0,stop:0});
-
-  const exportCSV = () => {
-    const headers = ['Data','Turno','Máquina','Operador','Nº Op.','Ordem','Referência','Rolos/Atados','Metros/Peças','Peças OK','Rejeitados','Paragens (min)','Nº Paragens'];
-    const rows = data.map(r=>[r.date,SHIFTS[r.shift_number],r.machine_name,r.operator_name,r.operator_number,r.order_number,r.ref_code,r.total_rolls||0,r.total_meters||0,r.total_pieces_ok||0,r.total_rejected||0,r.stop_min||0,r.stop_count||0]);
-    const csv = [headers,...rows].map(r=>r.map(c=>`"${c||''}"`).join(',')).join('\n');
-    const a = document.createElement('a'); a.href='data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csv); a.download=`relatorio_producao_${filter.date_from}_${filter.date_to}.csv`; a.click();
-  };
+  const isExtrusao = (shift) => shift.machine_type === 'extrusao';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">📈 Relatórios</h1>
-        <Btn variant="outline" onClick={exportCSV}>⬇️ Exportar CSV</Btn>
-      </div>
-      <div className="bg-white rounded-xl shadow-sm p-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Input label="Data início" type="date" value={filter.date_from} onChange={e=>setFilter(f=>({...f,date_from:e.target.value}))}/>
-          <Input label="Data fim" type="date" value={filter.date_to} onChange={e=>setFilter(f=>({...f,date_to:e.target.value}))}/>
-          <Select label="Máquina" value={filter.machine_id} onChange={e=>setFilter(f=>({...f,machine_id:e.target.value}))} placeholder="Todas" options={machines.map(m=>({value:m.id,label:m.name}))}/>
-          <div className="flex items-end">
-            <Btn className="w-full" onClick={load} disabled={loading}>{loading?'A carregar…':'Filtrar'}</Btn>
+    <div className="min-h-screen bg-slate-100">
+      <div className="bg-purple-700 text-white px-4 py-3">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 className="font-bold text-lg">🔍 Controlo de Qualidade</h1>
+            <div className="text-purple-200 text-sm">Validação de Registos de Produção</div>
+          </div>
+          <div className="flex items-center gap-3">
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+              className="bg-purple-800 text-white border border-purple-500 rounded-lg px-3 py-1.5 text-sm focus:outline-none"/>
+            <Btn variant="outline" size="sm" onClick={logout}>Sair</Btn>
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <KpiCard label="Rolos/Atados" value={totals.rolls.toFixed(0)} color="blue"/>
-        <KpiCard label="Metros/Peças" value={totals.meters.toFixed(0)} color="blue"/>
-        <KpiCard label="Peças OK" value={totals.ok.toFixed(0)} color="green"/>
-        <KpiCard label="Rejeitados" value={totals.rej.toFixed(0)} color="red"/>
-        <KpiCard label="Paragens" value={`${totals.stop} min`} color="amber"/>
+
+      <div className="max-w-5xl mx-auto p-4 space-y-4">
+        {error&&<Alert type="error">{error}</Alert>}
+        {loading?<div className="flex justify-center py-20"><Spinner/></div>:
+         shifts.length===0?<EmptyState icon="📅" title="Sem turnos nesta data" desc="Selecione outra data ou aguarde registos"/>:(
+          shifts.map(shift=>(
+            <div key={shift.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className={`px-4 py-3 border-b flex items-center justify-between ${isExtrusao(shift)?'bg-blue-50':'bg-orange-50'}`}>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="font-bold text-gray-900">{shift.machine_name}</span>
+                  <Badge text={SHIFTS[shift.shift_number]} color={shift.shift_number===1?'amber':shift.shift_number===2?'orange':'indigo'}/>
+                  <span className="text-sm text-gray-600">{shift.operator_name} (#{shift.operator_number})</span>
+                  {shift.ref_name&&<span className="text-sm font-semibold text-gray-700">{shift.ref_name}</span>}
+                  {shift.ref_code&&<span className="text-xs font-mono text-gray-400">{shift.ref_code}</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge text={STATUS_LABELS[shift.status]} color={shift.status==='open'?'green':'gray'}/>
+                  <span className="text-xs text-gray-400">{shift.start_time||'?'}–{shift.end_time||'…'}</span>
+                </div>
+              </div>
+              {shift.entries.length===0?(
+                <div className="px-4 py-6 text-center text-gray-400 text-sm">Sem registos de produção neste turno</div>
+              ):(
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                      <tr>
+                        {isExtrusao(shift)?<>
+                          <th className="px-3 py-2 text-left">Cor</th>
+                          <th className="px-3 py-2 text-right">Rolos</th>
+                          <th className="px-3 py-2 text-right">Metros</th>
+                        </>:<>
+                          <th className="px-3 py-2 text-right">Cavs.</th>
+                          <th className="px-3 py-2 text-right">Contador</th>
+                          <th className="px-3 py-2 text-right">Peças OK</th>
+                        </>}
+                        <th className="px-3 py-2 text-right">Rej.</th>
+                        <th className="px-3 py-2 text-right">Início</th>
+                        <th className="px-3 py-2 text-right">Fim</th>
+                        <th className="px-3 py-2 text-center">Valid.</th>
+                        <th className="px-3 py-2"/>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shift.entries.map(e=>(
+                        <tr key={e.id} className={`border-t table-row ${e.validated?'bg-green-50':''}`}>
+                          {isExtrusao(shift)?<>
+                            <td className="px-3 py-2">{e.color||'—'}</td>
+                            <td className="px-3 py-2 text-right">{e.rolls_bundles||0}</td>
+                            <td className="px-3 py-2 text-right">{e.meters_pieces||0}</td>
+                          </>:<>
+                            <td className="px-3 py-2 text-right">{e.active_cavities||'—'}</td>
+                            <td className="px-3 py-2 text-right">{e.counter||'—'}</td>
+                            <td className="px-3 py-2 text-right font-medium text-green-700">{e.pieces_ok||0}</td>
+                          </>}
+                          <td className="px-3 py-2 text-right text-red-500">{e.rejected||e.pieces_rejected||0}</td>
+                          <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.start_time||'—'}</td>
+                          <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.end_time||'—'}</td>
+                          <td className="px-3 py-2 text-center">
+                            <button onClick={()=>toggleValidate(e)}
+                              className={`px-2 py-0.5 rounded-full text-xs font-bold transition-colors ${e.validated?'bg-green-500 text-white hover:bg-red-400':'bg-gray-100 text-gray-500 hover:bg-green-100 hover:text-green-700'}`}>
+                              {e.validated?'✓ OK':'—'}
+                            </button>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center gap-1 justify-end">
+                              <button onClick={()=>setPalletData({entry:e,shift})} className="text-purple-500 hover:text-purple-700 text-xs" title="Ver código de palete">🏷️</button>
+                              <button onClick={()=>startEdit(e,shift)} className="text-blue-500 hover:text-blue-700 text-xs">✏️</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
+
+      {/* Edit modal */}
+      {editing&&(
+        <Modal open={!!editing} onClose={()=>setEditing(null)} title="Editar Registo" size="md">
+          <div className="space-y-4">
+            {isExtrusao(editing.shift)?<>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Rolos/Atados" type="number" min="0" value={editForm.rolls_bundles} onChange={e=>setEditForm(f=>({...f,rolls_bundles:e.target.value}))}/>
+                <Input label="Metros/Peças" type="number" min="0" step="0.1" value={editForm.meters_pieces} onChange={e=>setEditForm(f=>({...f,meters_pieces:e.target.value}))}/>
+              </div>
+              <Input label="Rejeitados" type="number" min="0" value={editForm.rejected} onChange={e=>setEditForm(f=>({...f,rejected:e.target.value}))}/>
+            </>:<>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Cavidades Ativas" type="number" min="0" value={editForm.active_cavities} onChange={e=>setEditForm(f=>({...f,active_cavities:e.target.value}))}/>
+                <Input label="Contador" type="number" min="0" value={editForm.counter} onChange={e=>setEditForm(f=>({...f,counter:e.target.value}))}/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Peças OK" type="number" min="0" value={editForm.pieces_ok} onChange={e=>setEditForm(f=>({...f,pieces_ok:e.target.value}))}/>
+                <Input label="Peças Rejeitadas" type="number" min="0" value={editForm.pieces_rejected} onChange={e=>setEditForm(f=>({...f,pieces_rejected:e.target.value}))}/>
+              </div>
+            </>}
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Hora Início" type="time" value={editForm.start_time} onChange={e=>setEditForm(f=>({...f,start_time:e.target.value}))}/>
+              <Input label="Hora Fim" type="time" value={editForm.end_time} onChange={e=>setEditForm(f=>({...f,end_time:e.target.value}))}/>
+            </div>
+            <Input label="Observações" value={editForm.notes} onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))}/>
+            <div className="flex gap-3 justify-end pt-2 border-t">
+              <Btn variant="outline" onClick={()=>setEditing(null)}>Cancelar</Btn>
+              <Btn onClick={saveEdit} disabled={saving}>{saving?'A guardar…':'Guardar'}</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Pallet code modal */}
+      <PalletCodeModalV2 open={!!palletData} onClose={()=>setPalletData(null)} entry={palletData?.entry} shift={palletData?.shift}/>
+    </div>
+  );
+}
+
+// ─── REPORTS PAGE ─────────────────────────────────────────────────────────────
+function ReportsPage() {
+  const [rows,setRows] = useState([]);
+  const [loading,setLoading] = useState(false);
+  const [error,setError] = useState('');
+  const [refs,setRefs] = useState([]);
+  const [machines,setMachines] = useState([]);
+  const [filters,setFilters] = useState({
+    date_from: new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10),
+    date_to:   new Date().toISOString().slice(0,10),
+    machine_id:'',
+    reference_id:''
+  });
+  const [shiftDetail,setShiftDetail] = useState(null); // shift detail modal
+
+  useEffect(()=>{
+    Promise.all([api.get('/api/references'),api.get('/api/machines')])
+      .then(([r,m])=>{ setRefs(r); setMachines(m); })
+      .catch(()=>{});
+  },[]);
+
+  const load = async () => {
+    setLoading(true); setError('');
+    try {
+      const p = new URLSearchParams();
+      if(filters.date_from)    p.set('date_from',filters.date_from);
+      if(filters.date_to)      p.set('date_to',filters.date_to);
+      if(filters.machine_id)   p.set('machine_id',filters.machine_id);
+      if(filters.reference_id) p.set('reference_id',filters.reference_id);
+      setRows(await api.get('/api/reports?'+p.toString()));
+    } catch(e){ setError(e.message); }
+    finally{ setLoading(false); }
+  };
+  useEffect(()=>{ load(); },[]);
+
+  const setF = (k,v) => setFilters(f=>({...f,[k]:v}));
+
+  const loadShiftDetail = async (shiftId) => {
+    try {
+      const d = await api.get(`/api/shifts/${shiftId}`);
+      setShiftDetail(d);
+    } catch(e){ setError(e.message); }
+  };
+
+  const totalMeters  = rows.reduce((a,r)=>a+(Number(r.total_meters)||0),0);
+  const totalPieces  = rows.reduce((a,r)=>a+(Number(r.total_pieces_ok)||0),0);
+  const totalRej     = rows.reduce((a,r)=>a+(Number(r.total_rejected)||0),0);
+  const totalStop    = rows.reduce((a,r)=>a+(Number(r.stop_min)||0),0);
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold text-gray-900">📈 Relatórios</h1>
+
+      {/* Filtros */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Input label="Data Início" type="date" value={filters.date_from} onChange={e=>setF('date_from',e.target.value)}/>
+          <Input label="Data Fim" type="date" value={filters.date_to} onChange={e=>setF('date_to',e.target.value)}/>
+          <Field label="Máquina">
+            <select value={filters.machine_id} onChange={e=>setF('machine_id',e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              <option value="">Todas as máquinas</option>
+              {machines.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Produto / Referência">
+            <select value={filters.reference_id} onChange={e=>setF('reference_id',e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              <option value="">Todos os produtos</option>
+              {refs.map(r=><option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="flex justify-end mt-3">
+          <Btn onClick={load} disabled={loading}>{loading?'A carregar…':'Aplicar Filtros'}</Btn>
+        </div>
+      </div>
+
+      {error&&<Alert type="error">{error}</Alert>}
+
+      {/* KPIs */}
+      {rows.length>0&&(
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiCard label="Turnos" value={rows.length} color="blue"/>
+          <KpiCard label="Metros/Peças ext." value={totalMeters.toFixed(0)} color="blue"/>
+          <KpiCard label="Peças inj. OK" value={totalPieces} color="green"/>
+          <KpiCard label="Total paragens" value={`${totalStop} min`} color="amber"/>
+        </div>
+      )}
+
+      {/* Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        {loading?<div className="flex justify-center py-12"><Spinner/></div>:data.length===0?<EmptyState title="Sem dados" desc="Ajuste os filtros e clique em Filtrar"/>:(
+        {loading?<div className="flex justify-center py-12"><Spinner/></div>:
+         rows.length===0?<EmptyState icon="📊" title="Sem dados" desc="Ajuste os filtros e clique em Aplicar"/>:(
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
                   <th className="px-3 py-2.5 text-left">Data</th>
-                  <th className="px-3 py-2.5 text-left">Turno</th>
+                  <th className="px-3 py-2.5 text-center">Turno</th>
                   <th className="px-3 py-2.5 text-left">Máquina</th>
+                  <th className="px-3 py-2.5 text-left">Produto</th>
                   <th className="px-3 py-2.5 text-left">Operador</th>
-                  <th className="px-3 py-2.5 text-left">Ordem</th>
-                  <th className="px-3 py-2.5 text-left">Referência</th>
-                  <th className="px-3 py-2.5 text-right">Rolos</th>
-                  <th className="px-3 py-2.5 text-right">Metros</th>
-                  <th className="px-3 py-2.5 text-right">OK</th>
+                  <th className="px-3 py-2.5 text-right">Metros/Peças</th>
+                  <th className="px-3 py-2.5 text-right">Peças OK</th>
                   <th className="px-3 py-2.5 text-right">Rej.</th>
                   <th className="px-3 py-2.5 text-right">Paragens</th>
-                  <th className="px-3 py-2.5 text-left">Estado</th>
+                  <th className="px-3 py-2.5"/>
                 </tr>
               </thead>
               <tbody>
-                {data.map(r=>(
+                {rows.map(r=>(
                   <tr key={r.id} className="border-t table-row">
-                    <td className="px-3 py-2.5 font-medium">{r.date}</td>
-                    <td className="px-3 py-2.5"><Badge text={`T${r.shift_number}`} color={r.shift_number===1?'amber':r.shift_number===2?'orange':'indigo'}/></td>
-                    <td className="px-3 py-2.5">{r.machine_name}</td>
-                    <td className="px-3 py-2.5 text-gray-600">{r.operator_name||'—'} <span className="text-gray-400">({r.operator_number||'—'})</span></td>
-                    <td className="px-3 py-2.5 font-mono text-xs">{r.order_number||'—'}</td>
-                    <td className="px-3 py-2.5 text-xs">{r.ref_code||'—'}</td>
-                    <td className="px-3 py-2.5 text-right">{r.total_rolls||0}</td>
-                    <td className="px-3 py-2.5 text-right">{r.total_meters||0}</td>
-                    <td className="px-3 py-2.5 text-right text-green-700 font-medium">{r.total_pieces_ok||0}</td>
-                    <td className="px-3 py-2.5 text-right text-red-600">{r.total_rejected||0}</td>
-                    <td className="px-3 py-2.5 text-right">{r.stop_min?`${r.stop_min}m`:'—'} {r.stop_count>0&&<span className="text-gray-400 text-xs">({r.stop_count}×)</span>}</td>
-                    <td className="px-3 py-2.5"><Badge text={STATUS_LABELS[r.status]||r.status} color={r.status==='open'?'green':'gray'}/></td>
+                    <td className="px-3 py-2.5 font-mono text-xs">{r.date}</td>
+                    <td className="px-3 py-2.5 text-center"><Badge text={`T${r.shift_number}`} color={r.shift_number===1?'amber':r.shift_number===2?'orange':'indigo'}/></td>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-xs font-bold mr-1 ${r.machine_type==='extrusao'?'text-blue-600':'text-orange-600'}`}>●</span>
+                      {r.machine_name}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="font-medium text-gray-900">{r.ref_name||'—'}</div>
+                      {r.ref_code&&<div className="text-xs font-mono text-gray-400">{r.ref_code}</div>}
+                    </td>
+                    <td className="px-3 py-2.5 text-gray-600">{r.operator_name||'—'} {r.operator_number?<span className="text-xs text-gray-400">(#{r.operator_number})</span>:''}</td>
+                    <td className="px-3 py-2.5 text-right">{Number(r.total_meters||0).toFixed(0)}</td>
+                    <td className="px-3 py-2.5 text-right font-medium text-green-700">{r.total_pieces_ok||0}</td>
+                    <td className="px-3 py-2.5 text-right text-red-500">{r.total_rejected||0}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-500">{r.stop_min||0} min</td>
+                    <td className="px-3 py-2.5 text-right">
+                      <button onClick={()=>loadShiftDetail(r.id)} className="text-blue-500 hover:text-blue-700 text-xs font-medium">Ver detalhe →</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1559,134 +1845,168 @@ function ReportsPage() {
           </div>
         )}
       </div>
+
+      {/* Shift Detail Modal */}
+      {shiftDetail&&(
+        <Modal open={!!shiftDetail} onClose={()=>setShiftDetail(null)} title={`Detalhe Turno — ${shiftDetail.machine_name} T${shiftDetail.shift_number} ${shiftDetail.date}`} size="xl">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><span className="text-gray-400">Produto:</span> <strong>{shiftDetail.ref_name||'—'}</strong></div>
+              <div><span className="text-gray-400">Ref.:</span> <span className="font-mono">{shiftDetail.ref_code||'—'}</span></div>
+              <div><span className="text-gray-400">Operador:</span> {shiftDetail.operator_name} (#{shiftDetail.operator_number})</div>
+              <div><span className="text-gray-400">Ordem:</span> {shiftDetail.order_number||'—'}</div>
+            </div>
+            {shiftDetail.entries?.length>0?(
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border rounded-lg overflow-hidden">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Hora Reg.</th>
+                      {shiftDetail.machine_type==='extrusao'?<>
+                        <th className="px-3 py-2 text-right">Rolos</th>
+                        <th className="px-3 py-2 text-right">Metros</th>
+                      </>:<>
+                        <th className="px-3 py-2 text-right">Peças OK</th>
+                        <th className="px-3 py-2 text-right">Contador</th>
+                      </>}
+                      <th className="px-3 py-2 text-right">Rej.</th>
+                      <th className="px-3 py-2 text-right">Início</th>
+                      <th className="px-3 py-2 text-right">Fim</th>
+                      <th className="px-3 py-2 text-left">Código Palete</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shiftDetail.entries.map(e=>(
+                      <tr key={e.id} className="border-t">
+                        <td className="px-3 py-2 font-mono text-xs text-gray-400">{e.created_at?.slice(11,16)||'—'}</td>
+                        {shiftDetail.machine_type==='extrusao'?<>
+                          <td className="px-3 py-2 text-right">{e.rolls_bundles||0}</td>
+                          <td className="px-3 py-2 text-right">{e.meters_pieces||0}</td>
+                        </>:<>
+                          <td className="px-3 py-2 text-right font-medium text-green-700">{e.pieces_ok||0}</td>
+                          <td className="px-3 py-2 text-right">{e.counter||'—'}</td>
+                        </>}
+                        <td className="px-3 py-2 text-right text-red-500">{e.rejected||e.pieces_rejected||0}</td>
+                        <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.start_time||'—'}</td>
+                        <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.end_time||'—'}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-green-700 font-bold">{buildPalletCode(e,shiftDetail)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ):<div className="text-center text-gray-400 py-6">Sem registos de produção</div>}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
 // ─── EFFICIENCY PAGE ──────────────────────────────────────────────────────────
 function EfficiencyPage() {
-  const today = new Date().toISOString().slice(0,10);
-  const thirtyAgo = new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10);
-  const [dateFrom,setDateFrom] = useState(thirtyAgo);
-  const [dateTo,setDateTo] = useState(today);
   const [data,setData] = useState(null);
   const [loading,setLoading] = useState(true);
-  const [tab,setTab] = useState('machines'); // machines | orders | workers | performance
+  const [error,setError] = useState('');
+  const [dateFrom,setDateFrom] = useState(new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10));
+  const [dateTo,setDateTo] = useState(new Date().toISOString().slice(0,10));
   const chartRef = useRef(null);
   const chartInst = useRef(null);
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
     try { setData(await api.get(`/api/analytics?date_from=${dateFrom}&date_to=${dateTo}`)); }
-    catch(e){} finally{ setLoading(false); }
-  };
-  useEffect(()=>{ load(); },[dateFrom,dateTo]);
+    catch(e){ setError(e.message); }
+    finally{ setLoading(false); }
+  },[dateFrom,dateTo]);
+  useEffect(()=>{ load(); },[load]);
 
-  // Helper: parse HH:MM to minutes
-  const toMin = (t) => { if(!t) return null; const [h,m]=t.split(':').map(Number); return h*60+m; };
-  const pct = (ok,rej) => { const t=ok+rej; return t>0?Math.round(ok*100/t):null; };
-  const colorPct = (p) => p===null?'text-gray-400':p>=95?'text-green-600 font-bold':p>=85?'text-amber-600 font-bold':'text-red-600 font-bold';
-  const bgPct = (p) => p===null?'bg-gray-100':p>=95?'bg-green-500':p>=85?'bg-amber-400':'bg-red-500';
-
-  // Compute performance entries with efficiency
-  const perfEntries = (data?.efficiencyEntries||[]).map(e=>{
-    const startM = toMin(e.start_time);
-    const endM = toMin(e.end_time);
-    if(startM===null||endM===null||!e.cycle_time_seconds||!e.counter) return null;
-    let durMin = endM - startM;
-    if(durMin<=0) durMin += 60*24; // crossed midnight
-    const theoreticalShots = (durMin*60) / e.cycle_time_seconds;
-    const perf = Math.round((e.counter / theoreticalShots)*100);
-    const qualPct = pct(e.pieces_ok, e.pieces_rejected);
-    const oee = qualPct!==null ? Math.round(perf * qualPct / 100) : null;
-    return {...e, durMin, theoreticalShots:Math.round(theoreticalShots), performance:perf, quality_pct:qualPct, oee};
-  }).filter(Boolean);
-
-  // Draw bar chart for quality by machine
   useEffect(()=>{
-    if(tab!=='machines'||!data||!chartRef.current) return;
+    if(!data||!chartRef.current) return;
     if(chartInst.current) chartInst.current.destroy();
-    const machines = data.qualityByMachine;
+    const entries = data.efficiencyEntries||[];
+    if(!entries.length) return;
+    const labels = entries.map(e=>`${e.date?.slice(5)} T${e.shift_number}`);
     chartInst.current = new Chart(chartRef.current, {
-      type:'bar',
-      data:{
-        labels: machines.map(m=>m.machine_name),
-        datasets:[
-          {label:'OK',data:machines.map(m=>Number(m.total_ok)||0),backgroundColor:'#22c55e'},
-          {label:'Rejeitados',data:machines.map(m=>Number(m.total_rejected)||0),backgroundColor:'#ef4444'},
-        ]
-      },
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true}}}
+      type:'scatter',
+      data:{ datasets:[{
+        label:'OEE (%)',
+        data: entries.map((e,i)=>({
+          x: i,
+          y: (() => {
+            const totalMins = e.start_time&&e.end_time ? (() => {
+              const [sh,sm]=e.start_time.split(':').map(Number);
+              const [eh,em]=e.end_time.split(':').map(Number);
+              return Math.max(0,(eh*60+em)-(sh*60+sm));
+            })() : 0;
+            const theoreticalShots = totalMins>0&&e.cycle_time_seconds>0 ? (totalMins*60)/e.cycle_time_seconds : 0;
+            const perf = theoreticalShots>0&&e.counter>0 ? Math.min(100,(e.counter/theoreticalShots)*100) : 0;
+            const qual = (e.pieces_ok+e.pieces_rejected)>0 ? (e.pieces_ok/(e.pieces_ok+e.pieces_rejected))*100 : 0;
+            return Math.round(perf*qual/100);
+          })()
+        })),
+        backgroundColor:'rgba(59,130,246,0.7)',
+        pointRadius:6,
+      }]},
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        scales:{
+          x:{display:false},
+          y:{min:0,max:100,title:{display:true,text:'OEE (%)'}}
+        },
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{title:(_,__)=>'',label:ctx=>{const e=entries[ctx.parsed.x]; return [`${e.operator_name} — ${e.machine_name}`,`OEE: ${ctx.parsed.y}%`,`Data: ${e.date}`];}}}
+        }
+      }
     });
-    return ()=>{ if(chartInst.current) chartInst.current.destroy(); };
-  },[tab,data]);
+  },[data]);
 
   if(loading) return <div className="flex justify-center py-20"><Spinner/></div>;
-  if(!data) return <Alert type="error">Erro ao carregar dados</Alert>;
-
-  const tabs = [
-    {id:'machines',label:'Por Máquina'},
-    {id:'orders',label:'Por Ordem'},
-    {id:'workers',label:'Por Operador'},
-    {id:'performance',label:'Eficiência (Ciclo)'},
-  ];
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold text-gray-900">⚡ Eficiência & Qualidade</h1>
-        <div className="flex gap-2 items-center flex-wrap">
-          <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"/>
-          <span className="text-gray-400 text-sm">→</span>
-          <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"/>
-          <Btn size="sm" onClick={load}>Atualizar</Btn>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-bold text-gray-900">⚡ Eficiência &amp; Qualidade</h1>
+        <div className="flex items-center gap-2">
+          <Input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className="text-sm"/>
+          <span className="text-gray-400">→</span>
+          <Input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className="text-sm"/>
+          <Btn size="sm" onClick={load} disabled={loading}>Aplicar</Btn>
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
-        {tabs.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab===t.id?'bg-white shadow text-blue-700':'text-gray-500 hover:text-gray-900'}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {error&&<Alert type="error">{error}</Alert>}
 
-      {/* ── TAB: Por Máquina ── */}
-      {tab==='machines'&&(
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl shadow-sm p-4">
-            <h2 className="font-bold text-gray-700 mb-3">Peças OK vs Rejeitadas por Máquina</h2>
-            <div className="chart-container"><canvas ref={chartRef}/></div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      {/* Quality by machine */}
+      {data?.qualityByMachine?.length>0&&(
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="p-4 border-b font-bold text-gray-900">Qualidade por Máquina</div>
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
-                  <th className="px-4 py-2 text-left">Máquina</th>
-                  <th className="px-4 py-2 text-left">Tipo</th>
-                  <th className="px-4 py-2 text-right">OK</th>
-                  <th className="px-4 py-2 text-right">Rejeitados</th>
-                  <th className="px-4 py-2 text-right">Total</th>
-                  <th className="px-4 py-2 text-center">Taxa Qualidade</th>
-                  <th className="px-4 py-2 text-left">Barra</th>
+                  <th className="px-4 py-2.5 text-left">Máquina</th>
+                  <th className="px-4 py-2.5 text-right">Produzido</th>
+                  <th className="px-4 py-2.5 text-right">Rejeitado</th>
+                  <th className="px-4 py-2.5 text-right">Taxa Qualidade</th>
                 </tr>
               </thead>
               <tbody>
                 {data.qualityByMachine.map(m=>{
-                  const ok=Number(m.total_ok)||0, rej=Number(m.total_rejected)||0;
-                  const p=pct(ok,rej);
+                  const total = (m.total_ok||0)+(m.total_rejected||0);
+                  const pct = total>0 ? Math.round((m.total_ok/total)*100) : null;
                   return (
                     <tr key={m.id} className="border-t table-row">
-                      <td className="px-4 py-2.5 font-medium">{m.machine_name}</td>
-                      <td className="px-4 py-2.5"><Badge text={m.machine_type==='extrusao'?'Extrusão':'Injeção'} color={m.machine_type==='extrusao'?'blue':'orange'}/></td>
-                      <td className="px-4 py-2.5 text-right text-green-600 font-medium">{ok.toLocaleString()}</td>
-                      <td className="px-4 py-2.5 text-right text-red-500">{rej.toLocaleString()}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-600">{(ok+rej).toLocaleString()}</td>
-                      <td className={`px-4 py-2.5 text-center text-lg ${colorPct(p)}`}>{p!==null?`${p}%`:'—'}</td>
-                      <td className="px-4 py-2.5 w-32">
-                        {p!==null&&<div className="w-full bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${bgPct(p)}`} style={{width:`${p}%`}}/></div>}
+                      <td className="px-4 py-2.5 font-medium">
+                        <span className={`text-xs font-bold mr-1.5 ${m.machine_type==='extrusao'?'text-blue-600':'text-orange-600'}`}>●</span>
+                        {m.machine_name}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">{m.total_ok||0}</td>
+                      <td className="px-4 py-2.5 text-right text-red-500">{m.total_rejected||0}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {pct!==null?<span className={`font-bold ${pct>=95?'text-green-600':pct>=80?'text-amber-600':'text-red-600'}`}>{pct}%</span>:'—'}
                       </td>
                     </tr>
                   );
@@ -1697,329 +2017,96 @@ function EfficiencyPage() {
         </div>
       )}
 
-      {/* ── TAB: Por Ordem ── */}
-      {tab==='orders'&&(
+      {/* OEE scatter */}
+      {data?.efficiencyEntries?.length>0&&(
+        <div className="bg-white rounded-xl shadow-sm p-4">
+          <div className="font-bold text-gray-900 mb-3">OEE por Registo (Injeção)</div>
+          <div className="chart-container"><canvas ref={chartRef}/></div>
+          <p className="text-xs text-gray-400 mt-2 text-center">Apenas registos com tempo de ciclo, horas de início/fim e contador definidos</p>
+        </div>
+      )}
+
+      {/* Worker performance */}
+      {data?.workerPerf?.length>0&&(
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-              <tr>
-                <th className="px-4 py-2 text-left">Ordem</th>
-                <th className="px-4 py-2 text-left">Produto</th>
-                <th className="px-4 py-2 text-left">Máquina</th>
-                <th className="px-4 py-2 text-right">Turnos</th>
-                <th className="px-4 py-2 text-right">OK</th>
-                <th className="px-4 py-2 text-right">Rejeitados</th>
-                <th className="px-4 py-2 text-center">Qualidade</th>
-                <th className="px-4 py-2 text-center">Ciclo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.qualityByOrder.map((o,i)=>{
-                const ok=Number(o.total_ok)||0, rej=Number(o.total_rejected)||0;
-                const p=pct(ok,rej);
-                return (
-                  <tr key={i} className="border-t table-row">
-                    <td className="px-4 py-2.5 font-mono font-bold text-xs">{o.order_number}</td>
-                    <td className="px-4 py-2.5">
-                      <div className="font-medium">{o.ref_name||'—'}</div>
-                      <div className="text-xs text-gray-400 font-mono">{o.ref_code||''}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-600">{o.machine_name||'—'}</td>
-                    <td className="px-4 py-2.5 text-right">{o.shift_count}</td>
-                    <td className="px-4 py-2.5 text-right text-green-600 font-medium">{ok.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-right text-red-500">{rej.toLocaleString()}</td>
-                    <td className={`px-4 py-2.5 text-center text-base ${colorPct(p)}`}>{p!==null?`${p}%`:'—'}</td>
-                    <td className="px-4 py-2.5 text-center text-xs text-gray-400">{o.cycle_time_seconds>0?`${o.cycle_time_seconds}s`:'—'}</td>
-                  </tr>
-                );
-              })}
-              {data.qualityByOrder.length===0&&<tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Sem dados no período selecionado</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ── TAB: Por Operador ── */}
-      {tab==='workers'&&(
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b bg-gray-50">
-            <p className="text-xs text-gray-500">Calculado com base nas peças de <strong>Injeção</strong> (onde existe contagem OK/Rejeitadas). Inclui todos os operadores com turnos no período.</p>
-          </div>
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-              <tr>
-                <th className="px-4 py-2 text-left">#</th>
-                <th className="px-4 py-2 text-left">Operador</th>
-                <th className="px-4 py-2 text-right">Turnos</th>
-                <th className="px-4 py-2 text-right">Total OK</th>
-                <th className="px-4 py-2 text-right">Rejeitadas</th>
-                <th className="px-4 py-2 text-right">Contador Total</th>
-                <th className="px-4 py-2 text-center">Taxa Qualidade</th>
-                <th className="px-4 py-2 text-left">Barra</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.workerPerf.map((w,i)=>{
-                const ok=Number(w.total_ok)||0, rej=Number(w.total_rejected)||0;
-                const p=pct(ok,rej);
-                return (
-                  <tr key={w.id} className="border-t table-row">
-                    <td className="px-4 py-2.5 text-gray-400 font-bold text-lg">{i+1}</td>
-                    <td className="px-4 py-2.5">
-                      <div className="font-semibold">{w.operator_name}</div>
-                      <div className="text-xs text-gray-400">#{w.operator_number}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">{w.shift_count}</td>
-                    <td className="px-4 py-2.5 text-right text-green-600 font-medium">{ok.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-right text-red-500">{rej.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-500">{Number(w.total_counter||0).toLocaleString()}</td>
-                    <td className={`px-4 py-2.5 text-center text-base ${colorPct(p)}`}>{p!==null?`${p}%`:'—'}</td>
-                    <td className="px-4 py-2.5 w-32">
-                      {p!==null&&<div className="w-full bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${bgPct(p)}`} style={{width:`${p}%`}}/></div>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {data.workerPerf.length===0&&<tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Sem dados no período selecionado</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ── TAB: Eficiência (Ciclo) ── */}
-      {tab==='performance'&&(
-        <div className="space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-            <strong>Eficiência de Ciclo</strong> — Calculada apenas para registos com hora início/fim preenchidas e ordens com tempo de ciclo definido.<br/>
-            <span className="text-xs">Performance = contador real ÷ disparos teóricos × 100 · Qualidade = peças OK ÷ total × 100 · OEE = Performance × Qualidade ÷ 100</span>
-          </div>
-          {perfEntries.length===0 ? (
-            <EmptyState icon="⚡" title="Sem dados de ciclo" desc="Para calcular a eficiência, defina o tempo de ciclo nas ordens de produção e preencha hora início/fim nos registos."/>
-          ) : (
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Data</th>
-                    <th className="px-3 py-2 text-left">Máquina</th>
-                    <th className="px-3 py-2 text-left">Operador</th>
-                    <th className="px-3 py-2 text-left">Ref.</th>
-                    <th className="px-3 py-2 text-right">Duração</th>
-                    <th className="px-3 py-2 text-right">Ciclo</th>
-                    <th className="px-3 py-2 text-right">Teórico</th>
-                    <th className="px-3 py-2 text-right">Real</th>
-                    <th className="px-3 py-2 text-center">Perf.</th>
-                    <th className="px-3 py-2 text-center">Qual.</th>
-                    <th className="px-3 py-2 text-center">OEE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {perfEntries.map((e,i)=>(
-                    <tr key={i} className="border-t table-row">
-                      <td className="px-3 py-2 text-xs text-gray-500">{e.date}</td>
-                      <td className="px-3 py-2 text-xs">{e.machine_name}</td>
-                      <td className="px-3 py-2 text-xs">{e.operator_name}<span className="text-gray-400"> #{e.operator_number}</span></td>
-                      <td className="px-3 py-2 font-mono text-xs">{e.ref_code||'—'}</td>
-                      <td className="px-3 py-2 text-right text-xs">{e.durMin}min</td>
-                      <td className="px-3 py-2 text-right text-xs">{e.cycle_time_seconds}s</td>
-                      <td className="px-3 py-2 text-right text-xs text-gray-400">{e.theoreticalShots}</td>
-                      <td className="px-3 py-2 text-right text-xs font-medium">{e.counter}</td>
-                      <td className={`px-3 py-2 text-center text-xs font-bold ${colorPct(e.performance)}`}>{e.performance}%</td>
-                      <td className={`px-3 py-2 text-center text-xs font-bold ${colorPct(e.quality_pct)}`}>{e.quality_pct!==null?`${e.quality_pct}%`:'—'}</td>
-                      <td className={`px-3 py-2 text-center text-sm font-extrabold ${colorPct(e.oee)}`}>{e.oee!==null?`${e.oee}%`:'—'}</td>
+          <div className="p-4 border-b font-bold text-gray-900">Performance por Operador (Injeção)</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">Operador</th>
+                  <th className="px-4 py-2.5 text-right">Turnos</th>
+                  <th className="px-4 py-2.5 text-right">Peças OK</th>
+                  <th className="px-4 py-2.5 text-right">Rejeitadas</th>
+                  <th className="px-4 py-2.5 text-right">Taxa Qualidade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.workerPerf.map(w=>{
+                  const total = (w.total_ok||0)+(w.total_rejected||0);
+                  const pct = total>0 ? Math.round((w.total_ok/total)*100) : null;
+                  return (
+                    <tr key={w.id} className="border-t table-row">
+                      <td className="px-4 py-2.5 font-medium">{w.operator_name} <span className="text-gray-400 text-xs">(#{w.operator_number})</span></td>
+                      <td className="px-4 py-2.5 text-right">{w.shift_count}</td>
+                      <td className="px-4 py-2.5 text-right text-green-700 font-medium">{w.total_ok||0}</td>
+                      <td className="px-4 py-2.5 text-right text-red-500">{w.total_rejected||0}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {pct!==null?<span className={`font-bold ${pct>=95?'text-green-600':pct>=80?'text-amber-600':'text-red-600'}`}>{pct}%</span>:'—'}
+                      </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── QUALITY PAGE ─────────────────────────────────────────────────────────────
-function QualityPage() {
-  const {user,logout} = useAuth();
-  const [shifts,setShifts] = useState([]);
-  const [loading,setLoading] = useState(true);
-  const [error,setError] = useState('');
-  const [date,setDate] = useState(new Date().toISOString().slice(0,10));
-  const [editing,setEditing] = useState(null); // entry being edited
-  const [editForm,setEditForm] = useState({});
-
-  const load = async() => {
-    setLoading(true);
-    try { setShifts(await api.get(`/api/quality/shifts?date=${date}`)); }
-    catch(e){ setError(e.message); } finally{ setLoading(false); }
-  };
-  useEffect(()=>{ load(); },[date]);
-
-  const validate = async(entryId) => {
-    try { await api.put(`/api/production-entries/${entryId}/validate`,{}); await load(); }
-    catch(e){ setError(e.message); }
-  };
-  const unvalidate = async(entryId) => {
-    try { await api.put(`/api/production-entries/${entryId}/unvalidate`,{}); await load(); }
-    catch(e){ setError(e.message); }
-  };
-  const openEdit = (entry) => { setEditing(entry); setEditForm({...entry}); };
-  const saveEdit = async() => {
-    try { await api.put(`/api/production-entries/${editing.id}`,editForm); setEditing(null); await load(); }
-    catch(e){ setError(e.message); }
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-100">
-      <div className="bg-purple-700 text-white px-4 py-3">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div>
-            <div className="font-bold text-lg">🔍 Controlo de Qualidade</div>
-            <div className="text-purple-200 text-sm">{user?.name} — {user?.number}</div>
-          </div>
-          <div className="flex items-center gap-3">
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="px-3 py-1.5 rounded-lg text-sm bg-purple-600 text-white border border-purple-500 focus:outline-none"/>
-            <Btn variant="outline" size="sm" onClick={()=>{logout();window.location.hash='#/';}}>Sair</Btn>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
-      <div className="max-w-5xl mx-auto p-4 space-y-4">
-        {error&&<Alert type="error">{error}</Alert>}
-        {loading ? <div className="flex justify-center py-20"><Spinner/></div> : shifts.length===0 ? (
-          <EmptyState icon="📋" title="Sem turnos" desc="Não existem turnos registados para esta data"/>
-        ) : shifts.map(s=>(
-          <div key={s.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className={`px-4 py-3 ${s.machine_type==='extrusao'?'bg-blue-600':'bg-orange-600'} text-white`}>
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <span className="font-bold">{s.machine_name}</span>
-                  <span className="mx-2 opacity-60">·</span>
-                  <span className="text-sm">{SHIFTS[s.shift_number]}</span>
-                  <span className="mx-2 opacity-60">·</span>
-                  <span className="text-sm">{s.operator_name} (#{s.operator_number})</span>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold text-lg">{s.ref_name||s.ref_code||'—'}</div>
-                  {s.ref_name&&<div className="text-xs opacity-70 font-mono">{s.ref_code}</div>}
-                </div>
-              </div>
-            </div>
-            {s.entries&&s.entries.length>0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Início</th>
-                      <th className="px-3 py-2 text-left">Fim</th>
-                      {s.machine_type==='extrusao'?<><th className="px-3 py-2 text-right">Rolos</th><th className="px-3 py-2 text-right">Metros</th></>:<><th className="px-3 py-2 text-right">Contador</th><th className="px-3 py-2 text-right">OK</th><th className="px-3 py-2 text-right">Rej.</th><th className="px-3 py-2 text-left">Acab.</th></>}
-                      <th className="px-3 py-2 text-center">Estado</th>
-                      <th className="px-3 py-2 text-right">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {s.entries.map(e=>(
-                      <tr key={e.id} className={`border-t ${e.validated?'bg-green-50':''}`}>
-                        <td className="px-3 py-2.5 text-gray-500 text-xs">{e.start_time||'—'}</td>
-                        <td className="px-3 py-2.5 text-gray-500 text-xs">{e.end_time||'—'}</td>
-                        {s.machine_type==='extrusao'?<><td className="px-3 py-2.5 text-right">{e.rolls_bundles||0}</td><td className="px-3 py-2.5 text-right">{e.meters_pieces||0}</td></>:<><td className="px-3 py-2.5 text-right">{e.counter||'—'}</td><td className="px-3 py-2.5 text-right font-medium text-green-700">{e.pieces_ok||0}</td><td className="px-3 py-2.5 text-right text-red-600">{e.pieces_rejected||0}</td><td className="px-3 py-2.5 text-xs">{e.finishing==='sim'?'✔ Sim':e.finishing==='nao'?'✕ Não':'—'}</td></>}
-                        <td className="px-3 py-2.5 text-center">
-                          {e.validated ? <span className="text-green-600 text-xs font-bold">✔ Validado<br/><span className="font-normal text-gray-400">{e.validated_by}</span></span> : <span className="text-amber-500 text-xs">⏳ Pendente</span>}
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <div className="flex gap-1 justify-end">
-                            <button onClick={()=>openEdit(e)} className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100">✏️</button>
-                            {e.validated
-                              ? <button onClick={()=>unvalidate(e.id)} className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100">↩</button>
-                              : <button onClick={()=>validate(e.id)} className="text-xs px-2 py-1 bg-green-50 text-green-600 rounded hover:bg-green-100 font-bold">✔ Validar</button>
-                            }
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <div className="px-4 py-4 text-center text-gray-400 text-sm">Sem registos de produção</div>}
-          </div>
-        ))}
-      </div>
-      {editing&&(
-        <Modal open={true} onClose={()=>setEditing(null)} title="Corrigir Registo" size="sm">
-          <div className="space-y-3">
-            {editing.pieces_ok!==undefined&&<>
-              <div className="grid grid-cols-2 gap-3">
-                <Input label="Peças OK" type="number" min="0" value={editForm.pieces_ok||''} onChange={e=>setEditForm(f=>({...f,pieces_ok:e.target.value}))}/>
-                <Input label="Rejeitadas" type="number" min="0" value={editForm.pieces_rejected||''} onChange={e=>setEditForm(f=>({...f,pieces_rejected:e.target.value}))}/>
-              </div>
-              <Input label="Contador" type="number" min="0" value={editForm.counter||''} onChange={e=>setEditForm(f=>({...f,counter:e.target.value}))}/>
-            </>}
-            {editing.rolls_bundles!==undefined&&<div className="grid grid-cols-2 gap-3">
-              <Input label="Rolos" type="number" min="0" value={editForm.rolls_bundles||''} onChange={e=>setEditForm(f=>({...f,rolls_bundles:e.target.value}))}/>
-              <Input label="Metros" type="number" min="0" value={editForm.meters_pieces||''} onChange={e=>setEditForm(f=>({...f,meters_pieces:e.target.value}))}/>
-            </div>}
-            <div className="grid grid-cols-2 gap-3">
-              <Input label="Hora Início" type="time" value={editForm.start_time||''} onChange={e=>setEditForm(f=>({...f,start_time:e.target.value}))}/>
-              <Input label="Hora Fim" type="time" value={editForm.end_time||''} onChange={e=>setEditForm(f=>({...f,end_time:e.target.value}))}/>
-            </div>
-            <Input label="Observações" value={editForm.notes||''} onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))}/>
-            <div className="flex gap-3 justify-end pt-2">
-              <Btn variant="outline" onClick={()=>setEditing(null)}>Cancelar</Btn>
-              <Btn onClick={saveEdit}>Guardar Correção</Btn>
-            </div>
-          </div>
-        </Modal>
       )}
+
+      {(!data?.qualityByMachine?.length&&!data?.efficiencyEntries?.length&&!data?.workerPerf?.length)&&
+        <EmptyState icon="⚡" title="Sem dados no período selecionado" desc="Ajuste o intervalo de datas e clique em Aplicar"/>}
     </div>
   );
 }
 
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
+function AdminApp() {
+  const [page,setPage] = useState(()=>{
+    const h = window.location.hash;
+    if(h.startsWith('#/admin/')) return h.replace('#/admin/','');
+    return 'dashboard';
+  });
+  useEffect(()=>{ window.location.hash = '#/admin/'+page; },[page]);
+  const pages = { dashboard:<Dashboard/>, orders:<OrdersPage/>, references:<ReferencesPage/>, colors:<ColorsPage/>, operators:<OperatorsPage/>, machines:<MachinesPage/>, 'stoppage-codes':<StopCodesPage/>, reports:<ReportsPage/>, efficiency:<EfficiencyPage/> };
+  return <AdminLayout page={page} setPage={setPage}>{pages[page]||<Dashboard/>}</AdminLayout>;
+}
+
 function App() {
   const {user} = useAuth();
-  const [hash, setHash] = useState(window.location.hash||'#/');
-  const [adminPage, setAdminPage] = useState('dashboard');
-
+  const [hash,setHash] = useState(window.location.hash||'#/');
   useEffect(()=>{
-    const handler = () => setHash(window.location.hash||'#/');
-    window.addEventListener('hashchange',handler);
-    return ()=>window.removeEventListener('hashchange',handler);
+    const h = ()=>setHash(window.location.hash||'#/');
+    window.addEventListener('hashchange',h);
+    return ()=>window.removeEventListener('hashchange',h);
   },[]);
 
-  useEffect(()=>{
-    const m = hash.match(/^#\/admin\/(.+)/);
-    if(m) setAdminPage(m[1]);
-  },[hash]);
-
-  // Not logged in
   if(!user) return <LoginPage/>;
 
-  // Quality route
-  if(user.role==='quality' || hash.startsWith('#/quality')) return <QualityPage/>;
+  // Qualidade: apenas por role
+  if(user.role==='quality') return <QualityPage/>;
 
-  // Operator route
-  const opMatch = hash.match(/^#\/operator\/(\d+)/);
-  if(opMatch) return <OperatorPage machineId={Number(opMatch[1])}/>;
+  // Admin
+  if(user.role==='admin') return <AdminApp/>;
 
-  // Admin routes
-  if(user.role==='admin') {
-    const pageMap = { dashboard:<Dashboard/>, orders:<OrdersPage/>, references:<ReferencesPage/>, colors:<ColorsPage/>, operators:<OperatorsPage/>, machines:<MachinesPage/>, 'stoppage-codes':<StoppageCodesPage/>, reports:<ReportsPage/>, efficiency:<EfficiencyPage/> };
-    return (
-      <AdminLayout page={adminPage} setPage={p=>{setAdminPage(p);window.location.hash=`#/admin/${p}`;}}>
-        {pageMap[adminPage]||<Dashboard/>}
-      </AdminLayout>
-    );
-  }
+  // Operador
+  const m = hash.match(/#\/operator\/(\d+)/);
+  if(m) return <OperatorPage machineId={Number(m[1])}/>;
 
-  // Operator at root — show machine selection
   return <LoginPage/>;
 }
 
-function Root() {
-  return <AuthProvider><App/></AuthProvider>;
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(<Root/>);
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<AuthProvider><App/></AuthProvider>);
 </script>
 </body>
 </html>
