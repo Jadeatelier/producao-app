@@ -1783,13 +1783,42 @@ function ReportsPage() {
     machine_id:'',
     reference_id:''
   });
-  const [shiftDetail,setShiftDetail] = useState(null); // shift detail modal
+  const [shiftDetail,setShiftDetail] = useState(null);
+  const [editEntry,setEditEntry] = useState(null); // {entry, isExtrusao}
+  const [editForm,setEditForm] = useState({});
+  const [editErr,setEditErr] = useState('');
+  const [editLoading,setEditLoading] = useState(false);
+  const [delEntryId,setDelEntryId] = useState(null);
 
   useEffect(()=>{
     Promise.all([api.get('/api/references'),api.get('/api/machines')])
       .then(([r,m])=>{ setRefs(r); setMachines(m); })
       .catch(()=>{});
   },[]);
+
+  const refreshShift = async () => {
+    if(!shiftDetail) return;
+    const d = await api.get(`/api/shifts/${shiftDetail.id}`);
+    setShiftDetail(d);
+  };
+
+  const saveEditEntry = async () => {
+    setEditLoading(true); setEditErr('');
+    try {
+      await api.put(`/api/production-entries/${editEntry.entry.id}`, editForm);
+      setEditEntry(null);
+      await refreshShift();
+    } catch(e){ setEditErr(e.message); }
+    finally{ setEditLoading(false); }
+  };
+
+  const doDelEntry = async () => {
+    try {
+      await api.del(`/api/production-entries/${delEntryId}`);
+      setDelEntryId(null);
+      await refreshShift();
+    } catch(e){ setError(e.message); }
+  };
 
   const load = async () => {
     setLoading(true); setError('');
@@ -1934,6 +1963,7 @@ function ReportsPage() {
                       <th className="px-3 py-2 text-right">Início</th>
                       <th className="px-3 py-2 text-right">Fim</th>
                       <th className="px-3 py-2 text-left">Código Palete</th>
+                      <th className="px-3 py-2"/>
                     </tr>
                   </thead>
                   <tbody>
@@ -1951,6 +1981,10 @@ function ReportsPage() {
                         <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.start_time||'—'}</td>
                         <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.end_time||'—'}</td>
                         <td className="px-3 py-2 font-mono text-xs text-green-700 font-bold">{buildPalletCode(e,shiftDetail)}</td>
+                        <td className="px-3 py-2 text-right flex gap-1 justify-end">
+                          <button onClick={()=>{ setEditErr(''); setEditForm({meters_pieces:e.meters_pieces||0,rolls_bundles:e.rolls_bundles||0,pieces_ok:e.pieces_ok||0,pieces_rejected:e.pieces_rejected||0,rejected:e.rejected||0,counter:e.counter||0,start_time:e.start_time||'',end_time:e.end_time||''}); setEditEntry({entry:e,isExtrusao:shiftDetail.machine_type==='extrusao'}); }} className="text-blue-500 hover:text-blue-700 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50" title="Editar">✏️</button>
+                          <button onClick={()=>setDelEntryId(e.id)} className="text-red-400 hover:text-red-600 text-xs px-1.5 py-0.5 rounded hover:bg-red-50" title="Eliminar">🗑</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1959,6 +1993,50 @@ function ReportsPage() {
             ):<div className="text-center text-gray-400 py-6">Sem registos de produção</div>}
           </div>
         </Modal>
+      )}
+
+      {/* Edit entry modal */}
+      {editEntry&&(
+        <Modal open={!!editEntry} onClose={()=>setEditEntry(null)} title="Corrigir Registo" size="sm">
+          <div className="space-y-3">
+            {editEntry.isExtrusao ? <>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Metros" type="number" min="0" step="0.1" value={editForm.meters_pieces} onChange={e=>setEditForm(f=>({...f,meters_pieces:e.target.value}))}/>
+                <Input label="Rolos/Atados" type="number" min="0" value={editForm.rolls_bundles} onChange={e=>setEditForm(f=>({...f,rolls_bundles:e.target.value}))}/>
+              </div>
+              <Input label="Rejeitado (metros)" type="number" min="0" step="0.1" value={editForm.rejected} onChange={e=>setEditForm(f=>({...f,rejected:e.target.value}))}/>
+            </> : <>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Peças OK" type="number" min="0" value={editForm.pieces_ok} onChange={e=>setEditForm(f=>({...f,pieces_ok:e.target.value}))}/>
+                <Input label="Contador" type="number" min="0" value={editForm.counter} onChange={e=>setEditForm(f=>({...f,counter:e.target.value}))}/>
+              </div>
+              <Input label="Peças Rejeitadas" type="number" min="0" value={editForm.pieces_rejected} onChange={e=>setEditForm(f=>({...f,pieces_rejected:e.target.value}))}/>
+            </>}
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Hora Início" type="time" value={editForm.start_time} onChange={e=>setEditForm(f=>({...f,start_time:e.target.value}))}/>
+              <Input label="Hora Fim" type="time" value={editForm.end_time} onChange={e=>setEditForm(f=>({...f,end_time:e.target.value}))}/>
+            </div>
+            {editErr&&<Alert type="error">{editErr}</Alert>}
+            <div className="flex gap-3 justify-end pt-2 border-t">
+              <Btn variant="outline" onClick={()=>setEditEntry(null)}>Cancelar</Btn>
+              <Btn onClick={saveEditEntry} disabled={editLoading}>{editLoading?'A guardar…':'Guardar Correção'}</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete entry confirm */}
+      {delEntryId&&(
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+            <h3 className="font-bold text-gray-900 text-lg mb-2">Eliminar registo?</h3>
+            <p className="text-gray-600 text-sm mb-4">Esta ação não pode ser revertida.</p>
+            <div className="flex gap-3 justify-end">
+              <Btn variant="outline" onClick={()=>setDelEntryId(null)}>Cancelar</Btn>
+              <button onClick={doDelEntry} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold">Eliminar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2333,7 +2411,7 @@ function ProductionAnalysisPage() {
         )}
       </div>
 
-      {/* Gráficos */}
+      {/* Charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-4">
           <h2 className="font-bold text-gray-900 mb-3">Produção diária — últimos 14 dias</h2>
@@ -2349,7 +2427,7 @@ function ProductionAnalysisPage() {
         </div>
       </div>
 
-      {/* Tabela paragens */}
+      {/* Stoppage table */}
       {data.stopReasons?.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="p-4 border-b font-bold text-gray-900">Top Motivos de Paragem (14 dias)</div>
