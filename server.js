@@ -305,6 +305,14 @@ app.put('/api/references/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+app.delete('/api/references/:id', admin, async (req, res) => {
+  try {
+    const used = await q1('SELECT COUNT(*) as cnt FROM production_orders WHERE reference_id=$1', [req.params.id]);
+    if (Number(used?.cnt) > 0) return res.status(400).json({ error: 'Referência em uso por ordens de produção — não pode ser eliminada.' });
+    await pool.query('DELETE FROM refs WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 // COLORS
 app.get('/api/colors', auth, async (req, res) => {
