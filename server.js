@@ -12,6 +12,21 @@ const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const PORT = process.env.PORT || 3000;
 
+// Traduz erros do PostgreSQL para mensagens legíveis
+function pgErr(e, context = {}) {
+  if (e.code === '23505') {
+    const c = e.constraint || '';
+    if (c.includes('number')) return 'Nº de operador já existe — escolhe um número diferente.';
+    if (c.includes('pin')) return 'Este PIN já está em uso — escolhe um PIN diferente.';
+    if (c.includes('code') || c.includes('_code')) return 'Este código já existe — escolhe um código diferente.';
+    if (context.field === 'number') return 'Nº de operador já existe — escolhe um número diferente.';
+    return 'Valor duplicado — já existe um registo com estes dados.';
+  }
+  if (e.code === '23503') return 'Não é possível eliminar — este registo está em uso.';
+  if (e.code === '23502') return 'Campo obrigatório em falta.';
+  return e.message;
+}
+
 if (!process.env.JWT_SECRET || !process.env.ADMIN_PASSWORD) {
   console.warn('⚠️  AVISO: Definir JWT_SECRET e ADMIN_PASSWORD como variáveis de ambiente no Render!');
 }
@@ -217,7 +232,7 @@ app.post('/api/auth/operator', async (req, res) => {
     const role = op.role || 'operator';
     const token = jwt.sign({ id: op.id, name: op.name, number: op.number, role }, JWT_SECRET, { expiresIn: '12h' });
     res.json({ token, operator: { id: op.id, name: op.name, number: op.number, role } });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 app.post('/api/auth/admin', (req, res) => {
@@ -239,7 +254,7 @@ app.post('/api/machines', admin, async (req, res) => {
     const r = await q1('INSERT INTO machines(name,type,has_weighing,notes) VALUES($1,$2,$3,$4) RETURNING id',
       [b.name, b.type, b.has_weighing?1:0, b.notes||null]);
     res.json({ id: r.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/machines/:id', admin, async (req, res) => {
   try {
@@ -247,7 +262,7 @@ app.put('/api/machines/:id', admin, async (req, res) => {
     await pool.query('UPDATE machines SET name=$1,type=$2,has_weighing=$3,notes=$4,active=$5 WHERE id=$6',
       [b.name, b.type, b.has_weighing?1:0, b.notes||null, b.active?1:0, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // OPERATORS
@@ -265,7 +280,7 @@ app.post('/api/operators', admin, async (req, res) => {
     const r = await q1('INSERT INTO operators(name,number,pin_hash,role) VALUES($1,$2,$3,$4) RETURNING id',
       [b.name, b.number, bcrypt.hashSync(String(b.pin), 10), b.role||'operator']);
     res.json({ id: r.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/operators/:id', admin, async (req, res) => {
   try {
@@ -278,7 +293,7 @@ app.put('/api/operators/:id', admin, async (req, res) => {
         [b.name, b.number, b.role||'operator', b.active?1:0, req.params.id]);
     }
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // REFERENCES
@@ -287,7 +302,7 @@ app.get('/api/references', auth, async (req, res) => {
     const mt = req.query.machine_type;
     if (mt) res.json(await q('SELECT * FROM refs WHERE active=1 AND machine_type=$1 ORDER BY code', [mt]));
     else    res.json(await q('SELECT * FROM refs WHERE active=1 ORDER BY code'));
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.post('/api/references', admin, async (req, res) => {
   try {
@@ -295,7 +310,7 @@ app.post('/api/references', admin, async (req, res) => {
     const r = await q1('INSERT INTO refs(code,name,machine_type,raw_material,weight_per_ml,weight_per_piece,notes) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',
       [b.code, b.name, b.machine_type, b.raw_material||null, b.weight_per_ml||null, b.weight_per_piece||null, b.notes||null]);
     res.json({ id: r.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/references/:id', admin, async (req, res) => {
   try {
@@ -303,7 +318,7 @@ app.put('/api/references/:id', admin, async (req, res) => {
     await pool.query('UPDATE refs SET code=$1,name=$2,machine_type=$3,raw_material=$4,weight_per_ml=$5,weight_per_piece=$6,notes=$7,active=$8 WHERE id=$9',
       [b.code, b.name, b.machine_type, b.raw_material||null, b.weight_per_ml||null, b.weight_per_piece||null, b.notes||null, b.active?1:0, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.delete('/api/references/:id', admin, async (req, res) => {
   try {
@@ -311,7 +326,7 @@ app.delete('/api/references/:id', admin, async (req, res) => {
     if (Number(used?.cnt) > 0) return res.status(400).json({ error: 'Referência em uso por ordens de produção — não pode ser eliminada.' });
     await pool.query('DELETE FROM refs WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // COLORS
@@ -325,7 +340,7 @@ app.post('/api/colors', admin, async (req, res) => {
     const r = await q1('INSERT INTO colors(code,name,hex_color) VALUES($1,$2,$3) RETURNING id',
       [b.code, b.name, b.hex_color||'#6B7280']);
     res.json({ id: r.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/colors/:id', admin, async (req, res) => {
   try {
@@ -333,7 +348,7 @@ app.put('/api/colors/:id', admin, async (req, res) => {
     await pool.query('UPDATE colors SET code=$1,name=$2,hex_color=$3,active=$4 WHERE id=$5',
       [b.code, b.name, b.hex_color, b.active?1:0, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // STOPPAGE CODES
@@ -347,7 +362,7 @@ app.post('/api/stoppage-codes', admin, async (req, res) => {
     const r = await q1('INSERT INTO stoppage_codes(code,description,category) VALUES($1,$2,$3) RETURNING id',
       [b.code, b.description, b.category||'Geral']);
     res.json({ id: r.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/stoppage-codes/:id', admin, async (req, res) => {
   try {
@@ -355,7 +370,7 @@ app.put('/api/stoppage-codes/:id', admin, async (req, res) => {
     await pool.query('UPDATE stoppage_codes SET code=$1,description=$2,category=$3,active=$4 WHERE id=$5',
       [b.code, b.description, b.category, b.active?1:0, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // ORDERS
@@ -375,14 +390,14 @@ app.get('/api/orders', auth, async (req, res) => {
     if (req.query.machine_id) { sql += ` AND po.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
     sql += ' ORDER BY po.created_at DESC';
     res.json(await q(sql, p));
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.get('/api/orders/:id', auth, async (req, res) => {
   try {
     const o = await q1('SELECT ' + ORDER_COLS + ' WHERE po.id=$1', [req.params.id]);
     if (!o) return res.status(404).json({ error: 'Ordem nao encontrada' });
     res.json(o);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.post('/api/orders', admin, async (req, res) => {
   try {
@@ -390,7 +405,7 @@ app.post('/api/orders', admin, async (req, res) => {
     const r = await q1('INSERT INTO production_orders(order_number,reference_id,color_id,machine_id,quantity,unit,mp_phases,cycle_time_seconds,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
       [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', JSON.stringify(b.mp_phases||[]), b.cycle_time_seconds||0, b.notes||null]);
     res.json({ id: r.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/orders/:id', admin, async (req, res) => {
   try {
@@ -398,7 +413,7 @@ app.put('/api/orders/:id', admin, async (req, res) => {
     await pool.query('UPDATE production_orders SET order_number=$1,reference_id=$2,color_id=$3,machine_id=$4,quantity=$5,unit=$6,mp_phases=$7,cycle_time_seconds=$8,notes=$9,status=$10 WHERE id=$11',
       [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', JSON.stringify(b.mp_phases||[]), b.cycle_time_seconds||0, b.notes||null, b.status||'active', req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 function currentShift() {
@@ -430,7 +445,7 @@ app.get('/api/shifts/active', auth, async (req, res) => {
       [req.query.machine_id]
     );
     res.json(shift || null);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.get('/api/shifts', admin, async (req, res) => {
   try {
@@ -442,7 +457,7 @@ app.get('/api/shifts', admin, async (req, res) => {
     if (req.query.machine_id) { sql += ` AND s.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
     sql += ' ORDER BY s.date DESC,s.shift_number';
     res.json(await q(sql, p));
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.get('/api/shifts/:id', auth, async (req, res) => {
   try {
@@ -465,7 +480,7 @@ app.get('/api/shifts/:id', auth, async (req, res) => {
       [shift.order_id]
     ) : null;
     res.json(Object.assign({}, shift, { entries, stoppages, weighing, orderTotals }));
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.post('/api/shifts', auth, async (req, res) => {
   try {
@@ -479,7 +494,7 @@ app.post('/api/shifts', auth, async (req, res) => {
     const r = await q1('INSERT INTO shifts(order_id,operator_id,machine_id,shift_number,date,start_time) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
       [req.body.order_id, req.user.id, req.body.machine_id, shiftNum, todayStr(), nowTime()]);
     res.json({ id: r.id, resumed: false });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/shifts/:id/close', auth, async (req, res) => {
   try {
@@ -490,7 +505,7 @@ app.put('/api/shifts/:id/close', auth, async (req, res) => {
     await pool.query("UPDATE shifts SET status='closed',end_time=$1,notes=$2 WHERE id=$3",
       [nowTime(), (req.body && req.body.notes)||null, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // PRODUCTION ENTRIES
@@ -509,7 +524,7 @@ app.post('/api/production-entries', auth, async (req, res) => {
       [b.shift_id, b.color||null, rolls_bundles, meters_pieces, rejected, active_cavities, counter, pieces_ok, pieces_rejected, b.finishing||null, b.start_time||null, b.end_time||null, b.notes||null]
     );
     res.json({ id: r.id, created_at: r.created_at });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/production-entries/:id', quality, async (req, res) => {
   try {
@@ -517,20 +532,20 @@ app.put('/api/production-entries/:id', quality, async (req, res) => {
     await pool.query('UPDATE production_entries SET color=$1,rolls_bundles=$2,meters_pieces=$3,rejected=$4,active_cavities=$5,counter=$6,pieces_ok=$7,pieces_rejected=$8,finishing=$9,start_time=$10,end_time=$11,notes=$12 WHERE id=$13',
       [b.color||null, Math.max(0,Number(b.rolls_bundles)||0), Math.max(0,Number(b.meters_pieces)||0), Math.max(0,Number(b.rejected)||0), b.active_cavities?Math.max(0,Number(b.active_cavities)):null, (b.counter!==''&&b.counter!==null)?Math.max(0,Number(b.counter)):null, Math.max(0,Number(b.pieces_ok)||0), Math.max(0,Number(b.pieces_rejected)||0), b.finishing||null, b.start_time||null, b.end_time||null, b.notes||null, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/production-entries/:id/validate', quality, async (req, res) => {
   try {
     const by = req.user.name ? `${req.user.name} (#${req.user.number})` : 'Qualidade';
     await pool.query('UPDATE production_entries SET validated=1,validated_by=$1,validated_at=NOW() WHERE id=$2', [by, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.put('/api/production-entries/:id/unvalidate', quality, async (req, res) => {
   try {
     await pool.query('UPDATE production_entries SET validated=0,validated_by=NULL,validated_at=NULL WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.delete('/api/production-entries/:id', auth, async (req, res) => {
   try {
@@ -543,7 +558,7 @@ app.delete('/api/production-entries/:id', auth, async (req, res) => {
     }
     await pool.query('DELETE FROM production_entries WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // QUALITY
@@ -557,7 +572,7 @@ app.get('/api/quality/shifts', quality, async (req, res) => {
       result.push({...s, entries});
     }
     res.json(result);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // WEIGHING
@@ -567,7 +582,7 @@ app.post('/api/weighing', auth, async (req, res) => {
     const r = await q1('INSERT INTO weighing_records(shift_id,rolo_number,weight_kg,notes) VALUES($1,$2,$3,$4) RETURNING id',
       [b.shift_id, b.rolo_number||null, b.weight_kg, b.notes||null]);
     res.json({ id: r.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.delete('/api/weighing/:id', auth, async (req, res) => {
   try {
@@ -580,7 +595,7 @@ app.delete('/api/weighing/:id', auth, async (req, res) => {
     }
     await pool.query('DELETE FROM weighing_records WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // STOPPAGES
@@ -590,7 +605,7 @@ app.post('/api/stoppages', auth, async (req, res) => {
     const r = await q1('INSERT INTO stoppages(shift_id,stoppage_code_id,duration_minutes,notes) VALUES($1,$2,$3,$4) RETURNING id',
       [b.shift_id, b.stoppage_code_id||null, b.duration_minutes||0, b.notes||null]);
     res.json({ id: r.id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 app.delete('/api/stoppages/:id', auth, async (req, res) => {
   try {
@@ -603,7 +618,7 @@ app.delete('/api/stoppages/:id', auth, async (req, res) => {
     }
     await pool.query('DELETE FROM stoppages WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // DASHBOARD
@@ -622,7 +637,7 @@ app.get('/api/dashboard', admin, async (req, res) => {
       q('SELECT sc.category,SUM(st.duration_minutes) as total_min FROM stoppages st JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id JOIN shifts s ON st.shift_id=s.id WHERE s.date>=$1 GROUP BY sc.category ORDER BY total_min DESC', [ws])
     ]);
     res.json({ todayProd, todayStops, machines, topStops, daily, stopCats });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // REPORTS
@@ -650,7 +665,7 @@ app.get('/api/reports', admin, async (req, res) => {
     if (req.query.reference_id) { sql += ` AND po.reference_id=$${p.length+1}`; p.push(req.query.reference_id); }
     sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.id,r.code,r.name ORDER BY s.date DESC,s.shift_number';
     res.json(await q(sql, p));
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // ANALYTICS
@@ -702,7 +717,7 @@ app.get('/api/analytics', admin, async (req, res) => {
          ORDER BY s.date DESC,pe.created_at DESC LIMIT 500`, [df,dt])
     ]);
     res.json({ qualityByMachine, qualityByOrder, workerPerf, efficiencyEntries });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
 // PRODUCTION PROGRESS (admin only)
@@ -765,27 +780,24 @@ app.get('/api/production-progress', admin, async (req, res) => {
          JOIN shifts s ON s.order_id=po.id AND s.date>=$1
          LEFT JOIN production_entries pe ON pe.shift_id=s.id
          WHERE po.status='active'
-         GROUP BY po.order_number, s.date ORDER BY s.date`, [since14]),
+                GROUP BY po.order_number, s.date ORDER BY s.date`, [since14]),
 
-      // Top stoppage reasons last 14 days
-      q(`SELECT sc.code, sc.description, sc.category,
-            COUNT(*) as cnt,
-            COALESCE(SUM(st.duration_minutes),0) as total_min
+      // Stop reasons aggregated
+      q(`SELECT sc.description, SUM(st.duration_minutes) as total_minutes
          FROM stoppages st
-         JOIN stop_codes sc ON st.stop_code_id=sc.id
+         JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id
          JOIN shifts s ON st.shift_id=s.id
          WHERE s.date>=$1
-         GROUP BY sc.code, sc.description, sc.category
-         ORDER BY total_min DESC LIMIT 10`, [since14])
+         GROUP BY sc.description ORDER BY total_minutes DESC`, [since14])
     ]);
 
     res.json({ orders, daily, orderDaily, stopReasons });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
 });
 
-// SERVE FRONTEND
+// ─── SERVE FRONTEND ────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index_clean.html'));
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Servidor a correr na porta ${PORT}`));
