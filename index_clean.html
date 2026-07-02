@@ -1233,9 +1233,11 @@ function OrderForm({open,onClose,onSave,editing,refs,colors,machines,orders}) {
   const addPhase = () => phases.length<10&&setPhases(p=>[...p,{phase:p.length+1,quantity:''}]);
   const delPhase = (i) => setPhases(p=>p.filter((_,j)=>j!==i).map((x,j)=>({...x,phase:j+1})));
 
+  const [formErr,setFormErr] = useState('');
   const submit = async () => {
-    setLoading(true);
+    setFormErr(''); setLoading(true);
     try{ await onSave({...form,quantity:Number(form.quantity)||null,reference_id:form.reference_id||null,color_id:form.color_id||null,machine_id:form.machine_id||null,mp_phases:phases.filter(p=>p.quantity).map(p=>({phase:p.phase,quantity:Number(p.quantity)})) }); }
+    catch(e){ setFormErr(e.message); }
     finally{ setLoading(false); }
   };
 
@@ -1280,6 +1282,8 @@ function OrderForm({open,onClose,onSave,editing,refs,colors,machines,orders}) {
           </div>
         </div>
         <Textarea label="Observações" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
           <Btn onClick={submit} disabled={loading||!form.order_number}>{loading?'A guardar…':'Guardar'}</Btn>
@@ -1319,9 +1323,10 @@ function RefForm({open,onClose,onSave,editing}) {
   const empty = {code:'',name:'',machine_type:'extrusao',raw_material:'',weight_per_ml:'',weight_per_piece:'',notes:'',active:1};
   const [form,setForm] = useState(empty);
   const [loading,setLoading] = useState(false);
-  useEffect(()=>{ setForm(editing?{...editing}:empty); },[editing,open]);
+  const [formErr,setFormErr] = useState('');
+  useEffect(()=>{ setFormErr(''); setForm(editing?{...editing}:empty); },[editing,open]);
   const set = (k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit = async()=>{ setLoading(true); try{await onSave({...form,weight_per_ml:Number(form.weight_per_ml)||null,weight_per_piece:Number(form.weight_per_piece)||null,active:form.active?1:0});}finally{setLoading(false);} };
+  const submit = async()=>{ setFormErr(''); setLoading(true); try{await onSave({...form,weight_per_ml:Number(form.weight_per_ml)||null,weight_per_piece:Number(form.weight_per_piece)||null,active:form.active?1:0});}catch(e){setFormErr(e.message);}finally{setLoading(false);} };
   return (
     <Modal open={open} onClose={onClose} title={editing?'Editar Referência':'Nova Referência'}>
       <div className="space-y-4">
@@ -1337,6 +1342,10 @@ function RefForm({open,onClose,onSave,editing}) {
         </div>
         <Textarea label="Notas" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativa'},{value:0,label:'Inativa'}]}/>}
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
           <Btn onClick={submit} disabled={loading||!form.code||!form.name}>{loading?'A guardar…':'Guardar'}</Btn>
@@ -1373,9 +1382,10 @@ function ColorForm({open,onClose,onSave,editing}) {
   const empty = {code:'',name:'',hex_color:'#3B82F6',active:1};
   const [form,setForm] = useState(empty);
   const [loading,setLoading] = useState(false);
-  useEffect(()=>{ setForm(editing?{...editing}:empty); },[editing,open]);
+  const [formErr,setFormErr] = useState('');
+  useEffect(()=>{ setFormErr(''); setForm(editing?{...editing}:empty); },[editing,open]);
   const set = (k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit = async()=>{ setLoading(true); try{await onSave({...form,active:form.active?1:0});}finally{setLoading(false);} };
+  const submit = async()=>{ setFormErr(''); setLoading(true); try{await onSave({...form,active:form.active?1:0});}catch(e){setFormErr(e.message);}finally{setLoading(false);} };
   return (
     <Modal open={open} onClose={onClose} title={editing?'Editar Cor':'Nova Cor'} size="sm">
       <div className="space-y-4">
@@ -1388,6 +1398,7 @@ function ColorForm({open,onClose,onSave,editing}) {
           </div>
         </Field>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativa'},{value:0,label:'Inativa'}]}/>}
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
           <Btn onClick={submit} disabled={loading||!form.code||!form.name}>{loading?'A guardar…':'Guardar'}</Btn>
@@ -1423,9 +1434,10 @@ function OperatorsPage() {
 function OperatorForm({open,onClose,onSave,editing}) {
   const [form,setForm] = useState({name:'',number:'',pin:'',role:'operator',active:1});
   const [loading,setLoading] = useState(false);
-  useEffect(()=>{ setForm(editing?{name:editing.name,number:editing.number,pin:'',role:editing.role||'operator',active:editing.active}:{name:'',number:'',pin:'',role:'operator',active:1}); },[editing,open]);
+  const [formErr,setFormErr] = useState('');
+  useEffect(()=>{ setFormErr(''); setForm(editing?{name:editing.name,number:editing.number,pin:'',role:editing.role||'operator',active:editing.active}:{name:'',number:'',pin:'',role:'operator',active:1}); },[editing,open]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=async()=>{ setLoading(true); try{await onSave({...form,active:form.active?1:0});}finally{setLoading(false);} };
+  const submit=async()=>{ setFormErr(''); setLoading(true); try{await onSave({...form,active:form.active?1:0});}catch(e){setFormErr(e.message);}finally{setLoading(false);} };
   return (
     <Modal open={open} onClose={onClose} title={editing?'Editar Operador':'Novo Operador'} size="sm">
       <div className="space-y-4">
@@ -1434,6 +1446,7 @@ function OperatorForm({open,onClose,onSave,editing}) {
         <Input label={editing?"Novo PIN (deixar vazio para não alterar)":"PIN (4 dígitos)"} required={!editing} type="password" value={form.pin} onChange={e=>set('pin',e.target.value)} maxLength={4} inputMode="numeric" placeholder="4 dígitos"/>
         <Select label="Papel" value={form.role} onChange={e=>set('role',e.target.value)} options={[{value:'operator',label:'Operador'},{value:'quality',label:'Responsável de Qualidade'}]}/>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativo'},{value:0,label:'Inativo'}]}/>}
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
           <Btn onClick={submit} disabled={loading||!form.name||!form.number||(!editing&&!form.pin)}>{loading?'A guardar…':'Guardar'}</Btn>
@@ -1471,7 +1484,8 @@ function MachineForm({open,onClose,onSave,editing}) {
   const [loading,setLoading] = useState(false);
   useEffect(()=>{ setForm(editing?{...editing}:empty); },[editing,open]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=async()=>{ setLoading(true); try{await onSave({...form,has_weighing:form.has_weighing?1:0,active:form.active?1:0});}finally{setLoading(false);} };
+  const [formErr,setFormErr] = useState('');
+  const submit=async()=>{ setFormErr(''); setLoading(true); try{await onSave({...form,has_weighing:form.has_weighing?1:0,active:form.active?1:0});}catch(e){setFormErr(e.message);}finally{setLoading(false);} };
   return (
     <Modal open={open} onClose={onClose} title={editing?'Editar Máquina':'Nova Máquina'} size="sm">
       <div className="space-y-4">
@@ -1483,6 +1497,7 @@ function MachineForm({open,onClose,onSave,editing}) {
         </div>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativa'},{value:0,label:'Inativa'}]}/>}
         <Textarea label="Notas" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
           <Btn onClick={submit} disabled={loading||!form.name}>{loading?'A guardar…':'Guardar'}</Btn>
@@ -1530,6 +1545,7 @@ function StopCodeForm({open,onClose,onSave,editing}) {
         </div>
         <Input label="Descrição" required value={form.description} onChange={e=>set('description',e.target.value)} placeholder="ex: Avaria hidráulica"/>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativo'},{value:0,label:'Inativo'}]}/>}
+        {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
           <Btn onClick={submit} disabled={loading||!form.code||!form.description}>{loading?'A guardar…':'Guardar'}</Btn>
