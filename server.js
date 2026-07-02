@@ -267,7 +267,7 @@ app.put('/api/machines/:id', admin, async (req, res) => {
 
 // OPERATORS
 app.get('/api/operators/public', async (req, res) => {
-  try { res.json(await q('SELECT name, number FROM operators WHERE active=1 ORDER BY name')); }
+  try { res.json(await q('SELECT name, number, role FROM operators WHERE active=1 ORDER BY name')); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/operators', admin, async (req, res) => {
@@ -562,6 +562,51 @@ app.delete('/api/production-entries/:id', auth, async (req, res) => {
 });
 
 // QUALITY
+
+// All production entries for an order (operator history view)
+app.get('/api/orders/:id/history', auth, async (req, res) => {
+  try {
+    const entries = await q(`
+      SELECT pe.*, s.shift_number, s.date, s.operator_id,
+             o.name as operator_name, o.number as operator_number,
+             m.name as machine_name, m.type as machine_type
+      FROM production_entries pe
+      JOIN shifts s ON pe.shift_id=s.id
+      JOIN operators o ON s.operator_id=o.id
+      JOIN machines m ON s.machine_id=m.id
+      WHERE s.order_id=$1
+      ORDER BY pe.id
+    `, [req.params.id]);
+    res.json(entries);
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
+});
+
+// Quality daily report — all validated entries for a date
+app.get('/api/quality/daily-report', quality, async (req, res) => {
+  try {
+    const date = req.query.date || todayStr();
+    const rows = await q(`
+      SELECT pe.*,
+             s.shift_number, s.date, s.order_id,
+             o.name as operator_name, o.number as operator_number,
+             m.name as machine_name, m.type as machine_type,
+             po.order_number,
+             r.code as ref_code, r.name as ref_name,
+             c.name as color_name
+      FROM production_entries pe
+      JOIN shifts s ON pe.shift_id=s.id
+      JOIN operators o ON s.operator_id=o.id
+      JOIN machines m ON s.machine_id=m.id
+      LEFT JOIN production_orders po ON s.order_id=po.id
+      LEFT JOIN refs r ON po.reference_id=r.id
+      LEFT JOIN colors c ON po.color_id=c.id
+      WHERE s.date=$1 AND pe.validated=1
+      ORDER BY m.name, s.shift_number, pe.id
+    `, [date]);
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: pgErr(e) }); }
+});
+
 app.get('/api/quality/shifts', quality, async (req, res) => {
   try {
     const date = req.query.date || todayStr();
