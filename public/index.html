@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Registo de ProduÃ§Ã£o</title>
+<title>Registo de Produção</title>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.23.2/babel.min.js"></script>
@@ -37,15 +37,15 @@
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef, createContext, useContext } = React;
 
-// âââ CONSTANTS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-const SHIFTS = { 1:'ManhÃ£ (08-17)', 2:'Tarde (17-01)', 3:'Noite (01-08)' };
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const SHIFTS = { 1:'Manhã (08-17)', 2:'Tarde (17-01)', 3:'Noite (01-08)' };
 function currentShiftNum() { const h=new Date().getHours(); if(h>=8&&h<17)return 1; if(h>=17||h===0)return 2; return 3; }
 const SHIFT_COLORS = { 1:'bg-amber-100 text-amber-800', 2:'bg-orange-100 text-orange-800', 3:'bg-indigo-100 text-indigo-800' };
-const STATUS_LABELS = { pending:'Pendente', active:'Ativa', completed:'ConcluÃ­da', cancelled:'Cancelada', open:'Aberto', closed:'Fechado' };
+const STATUS_LABELS = { pending:'Pendente', active:'Ativa', completed:'Concluída', cancelled:'Cancelada', open:'Aberto', closed:'Fechado' };
 const STATUS_COLORS = { pending:'bg-gray-100 text-gray-700', active:'bg-green-100 text-green-700', completed:'bg-blue-100 text-blue-700', cancelled:'bg-red-100 text-red-700', open:'bg-green-100 text-green-700', closed:'bg-gray-100 text-gray-700' };
-const UNIT_LABELS = { atador:'Atados', metros:'Metros', pecas:'PeÃ§as' };
+const UNIT_LABELS = { atados:'Atados', metros:'Metros', pecas:'Peças' };
 
-// âââ API ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── API ──────────────────────────────────────────────────────────────────────
 const api = {
   token: () => localStorage.getItem('token'),
   h: () => ({ 'Content-Type':'application/json', 'Authorization':`Bearer ${api.token()}` }),
@@ -55,7 +55,7 @@ const api = {
   del: async (u) => { const r = await fetch(u,{method:'DELETE',headers:api.h()}); if(!r.ok){const e=await r.json().catch(()=>({})); throw new Error(e.error||'Erro'); } return r.json(); },
 };
 
-// âââ CONTEXT âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── CONTEXT ─────────────────────────────────────────────────────────────────
 const AuthCtx = createContext(null);
 function AuthProvider({children}) {
   const [user,setUser] = useState(() => { try { const t=localStorage.getItem('token'); if(!t)return null; const p=JSON.parse(atob(t.split('.')[1])); if(p.exp*1000<Date.now()){localStorage.removeItem('token');return null;} return p; } catch{return null;} });
@@ -65,7 +65,7 @@ function AuthProvider({children}) {
 }
 const useAuth = () => useContext(AuthCtx);
 
-// âââ UI COMPONENTS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── UI COMPONENTS ────────────────────────────────────────────────────────────
 function Btn({children,onClick,variant='primary',size='md',disabled,className='',type='button'}) {
   const base = 'inline-flex items-center justify-center gap-2 font-semibold rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
   const vars = { primary:'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500', danger:'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500', success:'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500', outline:'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-400', ghost:'text-gray-600 hover:bg-gray-100 focus:ring-gray-400' };
@@ -141,7 +141,7 @@ function KpiCard({label,value,sub,color='blue'}) {
 
 function Spinner() { return <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"/>; }
 
-function EmptyState({icon='ð',title,desc}) {
+function EmptyState({icon='📋',title,desc}) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="text-4xl mb-3">{icon}</div>
@@ -163,7 +163,7 @@ function ConfirmModal({open,onClose,onConfirm,title,message,variant='danger'}) {
   );
 }
 
-// âââ PIN PAD ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── PIN PAD ──────────────────────────────────────────────────────────────────
 function PinPad({value='',onChange,maxLen=4}) {
   const press = (d) => { if(value.length<maxLen) onChange(value+d); };
   const del = () => onChange(value.slice(0,-1));
@@ -180,13 +180,13 @@ function PinPad({value='',onChange,maxLen=4}) {
         ))}
         <div/>
         <button className="pin-btn" onClick={()=>press('0')}>0</button>
-        <button className="pin-btn text-red-500" onClick={del}>â«</button>
+        <button className="pin-btn text-red-500" onClick={del}>⌫</button>
       </div>
     </div>
   );
 }
 
-// âââ LOGIN / MACHINE SELECT âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── LOGIN / MACHINE SELECT ───────────────────────────────────────────────────
 function LoginPage() {
   const {login} = useAuth();
   const [step, setStep] = useState('machines'); // 'machines' | 'pin' | 'admin' | 'quality'
@@ -209,7 +209,7 @@ function LoginPage() {
   const selectMachine = (m) => { setSelMachine(m); setPin(''); setOpNumber(''); setOpSearch(''); setError(''); setSelShift(currentShiftNum()); setStep('pin'); };
 
   const submitPin = async () => {
-    if(!opNumber||pin.length<4){ setError('Insira o nÂº de operador e o PIN (4 dÃ­gitos)'); return; }
+    if(!opNumber||pin.length<4){ setError('Insira o nº de operador e o PIN (4 dígitos)'); return; }
     setLoading(true); setError('');
     try {
       const res = await api.post('/api/auth/operator',{number:opNumber.trim(),pin});
@@ -217,7 +217,7 @@ function LoginPage() {
       if(res.operator?.role==='quality') { window.location.hash='#/quality'; }
       else if(step==='quality') { window.location.hash='#/quality'; }
       else {
-        // Guarda o turno escolhido para ser usado ao criar o turno na mÃ¡quina
+        // Guarda o turno escolhido para ser usado ao criar o turno na máquina
         sessionStorage.setItem('pendingShiftNumber', String(selShift));
         window.location.hash = `#/operator/${selMachine.id}`;
       }
@@ -241,14 +241,14 @@ function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-800 p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
         <div className="text-center mb-6">
-          <div className="text-3xl mb-2">âï¸</div>
-          <h2 className="text-xl font-bold text-gray-900">Ãrea de Admin</h2>
+          <div className="text-3xl mb-2">⚙️</div>
+          <h2 className="text-xl font-bold text-gray-900">Área de Admin</h2>
         </div>
         {error&&<Alert type="error" className="mb-4">{error}</Alert>}
         <div className="space-y-4">
           <Input label="Password" type="password" value={adminPwd} onChange={e=>setAdminPwd(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submitAdmin()} autoFocus/>
-          <Btn className="w-full" onClick={submitAdmin} disabled={loading} size="lg">{loading?'A entrarâ¦':'Entrar'}</Btn>
-          <Btn variant="ghost" className="w-full" onClick={()=>{setStep('machines');setError('');}}>â Voltar</Btn>
+          <Btn className="w-full" onClick={submitAdmin} disabled={loading} size="lg">{loading?'A entrar…':'Entrar'}</Btn>
+          <Btn variant="ghost" className="w-full" onClick={()=>{setStep('machines');setError('');}}>← Voltar</Btn>
         </div>
       </div>
     </div>
@@ -257,25 +257,25 @@ function LoginPage() {
   if(step==='quality') return (
     <div className="min-h-screen flex items-center justify-center bg-slate-800 p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
-        <button onClick={()=>{setStep('machines');setError('');}} className="text-gray-400 hover:text-gray-600 text-sm mb-4">â Voltar</button>
+        <button onClick={()=>{setStep('machines');setError('');}} className="text-gray-400 hover:text-gray-600 text-sm mb-4">← Voltar</button>
         <div className="text-center mb-6">
-          <div className="inline-block px-4 py-1.5 rounded-full text-sm font-bold mb-2 bg-purple-100 text-purple-700">ð Controlo de Qualidade</div>
+          <div className="inline-block px-4 py-1.5 rounded-full text-sm font-bold mb-2 bg-purple-100 text-purple-700">🔍 Controlo de Qualidade</div>
           <div className="text-gray-500 text-sm">{SHIFTS[shiftNum]}</div>
         </div>
         {error&&<div className="mb-4"><Alert type="error">{error}</Alert></div>}
         <div className="mb-4">
-          <div className="text-sm font-semibold text-gray-700 mb-2">ResponsÃ¡vel de Qualidade</div>
+          <div className="text-sm font-semibold text-gray-700 mb-2">Responsável de Qualidade</div>
           {opNumber ? (
             <div className="flex items-center justify-between bg-purple-50 border-2 border-purple-200 rounded-xl px-3 py-2.5">
               <div>
                 <span className="font-semibold text-gray-900">{operators.find(o=>o.number===opNumber)?.name||opNumber}</span>
                 <span className="text-gray-400 text-xs ml-2">#{opNumber}</span>
               </div>
-              <button onClick={()=>{setOpNumber('');setOpSearch('');}} className="text-gray-400 hover:text-red-500 text-sm ml-2">â</button>
+              <button onClick={()=>{setOpNumber('');setOpSearch('');}} className="text-gray-400 hover:text-red-500 text-sm ml-2">✕</button>
             </div>
           ) : (
             <div>
-              <input type="text" value={opSearch} onChange={e=>setOpSearch(e.target.value)} placeholder="Pesquisar nome ou nÃºmeroâ¦"
+              <input type="text" value={opSearch} onChange={e=>setOpSearch(e.target.value)} placeholder="Pesquisar nome ou número…"
                 className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400"/>
               <div className="mt-1 border border-gray-200 rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-md">
                 {(()=>{ const qOps=operators.filter(o=>o.role==='quality'); const filtered=opSearch?qOps.filter(o=>o.name.toLowerCase().includes(opSearch.toLowerCase())||o.number.includes(opSearch)):qOps; return filtered.length>0?filtered.map(o=>(
@@ -284,7 +284,7 @@ function LoginPage() {
                     <span className="font-medium text-gray-900">{o.name}</span>
                     <span className="text-gray-400 ml-2">#{o.number}</span>
                   </button>
-                )):<div className="px-3 py-3 text-gray-400 text-xs text-center">{operators.length===0?'A carregarâ¦':'Sem responsÃ¡veis de qualidade definidos'}</div>; })()}
+                )):<div className="px-3 py-3 text-gray-400 text-xs text-center">{operators.length===0?'A carregar…':'Sem responsáveis de qualidade definidos'}</div>; })()}
               </div>
             </div>
           )}
@@ -294,7 +294,7 @@ function LoginPage() {
           <PinPad value={pin} onChange={setPin} maxLen={4}/>
         </div>
         <Btn className="w-full" size="lg" onClick={submitPin} disabled={loading||pin.length<4||!opNumber} variant="primary">
-          {loading?'A verificarâ¦':'Entrar na Qualidade â'}
+          {loading?'A verificar…':'Entrar na Qualidade →'}
         </Btn>
       </div>
     </div>
@@ -303,11 +303,11 @@ function LoginPage() {
   if(step==='pin') return (
     <div className="min-h-screen flex items-center justify-center bg-slate-800 p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
-        <button onClick={()=>{setStep('machines');setError('');}} className="text-gray-400 hover:text-gray-600 text-sm mb-4">â Voltar</button>
+        <button onClick={()=>{setStep('machines');setError('');}} className="text-gray-400 hover:text-gray-600 text-sm mb-4">← Voltar</button>
         <div className="text-center mb-4">
           <div className={`inline-block px-4 py-1.5 rounded-full text-sm font-bold mb-2 ${selMachine.type==='extrusao'?'bg-blue-100 text-blue-700':'bg-orange-100 text-orange-700'}`}>{selMachine.name}</div>
         </div>
-        {/* Seletor de turno â operador confirma em qual turno estÃ¡ */}
+        {/* Seletor de turno — operador confirma em qual turno está */}
         <div className="mb-4">
           <div className="text-sm font-semibold text-gray-700 mb-2">Turno</div>
           <div className="grid grid-cols-3 gap-2">
@@ -315,11 +315,11 @@ function LoginPage() {
               <button key={t} onClick={()=>setSelShift(t)}
                 className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${selShift===t?'bg-blue-600 border-blue-600 text-white':'border-gray-200 text-gray-600 hover:border-blue-400 hover:text-blue-600'}`}>
                 <div>T{t}</div>
-                <div className={`text-xs font-normal mt-0.5 ${selShift===t?'text-blue-100':'text-gray-400'}`}>{t===1?'ManhÃ£':t===2?'Tarde':'Noite'}</div>
+                <div className={`text-xs font-normal mt-0.5 ${selShift===t?'text-blue-100':'text-gray-400'}`}>{t===1?'Manhã':t===2?'Tarde':'Noite'}</div>
               </button>
             ))}
           </div>
-          <p className="text-xs text-gray-400 mt-1.5 text-center">Confirme o turno em que estÃ¡ a trabalhar</p>
+          <p className="text-xs text-gray-400 mt-1.5 text-center">Confirme o turno em que está a trabalhar</p>
         </div>
         {error&&<div className="mb-4"><Alert type="error">{error}</Alert></div>}
         <div className="mb-4">
@@ -330,11 +330,11 @@ function LoginPage() {
                 <span className="font-semibold text-gray-900">{operators.find(o=>o.number===opNumber)?.name||opNumber}</span>
                 <span className="text-gray-400 text-xs ml-2">#{opNumber}</span>
               </div>
-              <button onClick={()=>{setOpNumber('');setOpSearch('');}} className="text-gray-400 hover:text-red-500 text-sm ml-2">â</button>
+              <button onClick={()=>{setOpNumber('');setOpSearch('');}} className="text-gray-400 hover:text-red-500 text-sm ml-2">✕</button>
             </div>
           ) : (
             <div>
-              <input type="text" value={opSearch} onChange={e=>setOpSearch(e.target.value)} placeholder="Pesquisar nome ou nÃºmeroâ¦"
+              <input type="text" value={opSearch} onChange={e=>setOpSearch(e.target.value)} placeholder="Pesquisar nome ou número…"
                 className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"/>
               <div className="mt-1 border border-gray-200 rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-md">
                 {(opSearch ? operators.filter(o=>o.name.toLowerCase().includes(opSearch.toLowerCase())||o.number.includes(opSearch)) : operators).map(o=>(
@@ -344,7 +344,7 @@ function LoginPage() {
                     <span className="text-gray-400 ml-2">#{o.number}</span>
                   </button>
                 ))}
-                {operators.length===0&&<div className="px-3 py-3 text-gray-400 text-xs text-center">A carregarâ¦</div>}
+                {operators.length===0&&<div className="px-3 py-3 text-gray-400 text-xs text-center">A carregar…</div>}
               </div>
             </div>
           )}
@@ -354,7 +354,7 @@ function LoginPage() {
           <PinPad value={pin} onChange={setPin} maxLen={4}/>
         </div>
         <Btn className="w-full" size="lg" onClick={submitPin} disabled={loading||pin.length<4||!opNumber}>
-          {loading?'A verificarâ¦':'Entrar â'}
+          {loading?'A verificar…':'Entrar →'}
         </Btn>
         {!opNumber&&<p className="text-xs text-gray-400 text-center mt-2">Selecione um operador da lista acima</p>}
       </div>
@@ -366,24 +366,24 @@ function LoginPage() {
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-white">Registo de ProduÃ§Ã£o</h1>
-            <p className="text-slate-400 text-sm mt-1">{new Date().toLocaleDateString('pt-PT',{weekday:'long',day:'numeric',month:'long'})} Â· <span className="font-medium text-slate-300">{SHIFTS[shiftNum]}</span></p>
+            <h1 className="text-2xl font-bold text-white">Registo de Produção</h1>
+            <p className="text-slate-400 text-sm mt-1">{new Date().toLocaleDateString('pt-PT',{weekday:'long',day:'numeric',month:'long'})} · <span className="font-medium text-slate-300">{SHIFTS[shiftNum]}</span></p>
           </div>
           <div className="flex gap-2">
-            <button onClick={()=>{setStep('quality');setPin('');setOpNumber('');setOpSearch('');setError('');}} className="flex items-center gap-2 bg-purple-700 hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">ð Qualidade</button>
-            <button onClick={()=>{setStep('admin');setError('');}} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors">âï¸ Admin</button>
+            <button onClick={()=>{setStep('quality');setPin('');setOpNumber('');setOpSearch('');setError('');}} className="flex items-center gap-2 bg-purple-700 hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">🔍 Qualidade</button>
+            <button onClick={()=>{setStep('admin');setError('');}} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors">⚙️ Admin</button>
           </div>
         </div>
 
         {extrusao.length>0&&(
           <div className="mb-6">
-            <div className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-3">ExtrusÃ£o</div>
+            <div className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-3">Extrusão</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {extrusao.map(m=>(
                 <button key={m.id} onClick={()=>selectMachine(m)} className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl p-5 text-left transition-all hover:shadow-lg hover:-translate-y-0.5">
-                  <div className="text-2xl mb-2">ð­</div>
+                  <div className="text-2xl mb-2">🏭</div>
                   <div className="font-bold text-lg">{m.name}</div>
-                  {m.has_weighing===1&&<div className="text-blue-200 text-xs mt-1">âï¸ Com pesagem</div>}
+                  {m.has_weighing===1&&<div className="text-blue-200 text-xs mt-1">⚖️ Com pesagem</div>}
                 </button>
               ))}
             </div>
@@ -391,24 +391,24 @@ function LoginPage() {
         )}
         {injecao.length>0&&(
           <div>
-            <div className="text-xs font-bold text-orange-400 uppercase tracking-widest mb-3">InjeÃ§Ã£o</div>
+            <div className="text-xs font-bold text-orange-400 uppercase tracking-widest mb-3">Injeção</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {injecao.map(m=>(
                 <button key={m.id} onClick={()=>selectMachine(m)} className="bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white rounded-xl p-5 text-left transition-all hover:shadow-lg hover:-translate-y-0.5">
-                  <div className="text-2xl mb-2">âï¸</div>
+                  <div className="text-2xl mb-2">⚙️</div>
                   <div className="font-bold text-lg">{m.name}</div>
                 </button>
               ))}
             </div>
           </div>
         )}
-        {machines.length===0&&<div className="text-center text-slate-400 py-20">A carregar mÃ¡quinasâ¦</div>}
+        {machines.length===0&&<div className="text-center text-slate-400 py-20">A carregar máquinas…</div>}
       </div>
     </div>
   );
 }
 
-// âââ OPERATOR SHIFT VIEW âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── OPERATOR SHIFT VIEW ─────────────────────────────────────────────────────
 function OperatorPage({machineId}) {
   const {user,logout} = useAuth();
   const [shift, setShift] = useState(null);
@@ -420,7 +420,7 @@ function OperatorPage({machineId}) {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // 'entry'|'stoppage'|'weighing'|'order'|'close'
   const [error, setError] = useState('');
-  const [palletEntry, setPalletEntry] = useState(null); // entry para mostrar cÃ³digo palete
+  const [palletEntry, setPalletEntry] = useState(null); // entry para mostrar código palete
   const [confirmDel, setConfirmDel] = useState(null); // {type:'entry'|'stop'|'weigh', id}
   const [orderHistory,setOrderHistory] = useState([]);
   const [historyOpen,setHistoryOpen] = useState(false);
@@ -456,7 +456,7 @@ function OperatorPage({machineId}) {
 
   const openShift = async (orderId, mId) => {
     try {
-      // LÃª turno escolhido pelo operador no login (apenas na primeira abertura)
+      // Lê turno escolhido pelo operador no login (apenas na primeira abertura)
       const pendingShift = sessionStorage.getItem('pendingShiftNumber');
       sessionStorage.removeItem('pendingShiftNumber');
       const res = await api.post('/api/shifts',{
@@ -504,10 +504,10 @@ function OperatorPage({machineId}) {
   if(!shift && orders.length===0) return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-slate-800">
       <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
-        <div className="text-5xl mb-4">ð«</div>
+        <div className="text-5xl mb-4">🚫</div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Sem ordem ativa</h2>
-        <p className="text-gray-500 mb-6">NÃ£o existe uma ordem de produÃ§Ã£o ativa para esta mÃ¡quina. Contacte o supervisor.</p>
-        <Btn variant="outline" onClick={()=>{window.location.hash='#/';}} className="w-full">â Voltar</Btn>
+        <p className="text-gray-500 mb-6">Não existe uma ordem de produção ativa para esta máquina. Contacte o supervisor.</p>
+        <Btn variant="outline" onClick={()=>{window.location.hash='#/';}} className="w-full">← Voltar</Btn>
       </div>
     </div>
   );
@@ -515,14 +515,14 @@ function OperatorPage({machineId}) {
   if(!shift && orders.length>0) return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-slate-800">
       <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
-        <button onClick={()=>window.location.hash='#/'} className="text-gray-400 text-sm mb-4">â Voltar</button>
+        <button onClick={()=>window.location.hash='#/'} className="text-gray-400 text-sm mb-4">← Voltar</button>
         <h2 className="text-xl font-bold text-gray-900 mb-4">Selecionar Ordem</h2>
         <div className="space-y-3">
           {orders.map(o=>(
             <button key={o.id} onClick={()=>openShift(o.id)} className="w-full text-left border-2 border-gray-200 hover:border-blue-500 rounded-xl p-4 transition-colors">
               <div className="font-bold text-gray-900">{o.order_number}</div>
-              <div className="text-sm text-gray-500">{o.ref_code} â {o.ref_name}</div>
-              <div className="text-sm text-gray-500">{o.color_name} Â· {o.quantity} {UNIT_LABELS[o.unit]}</div>
+              <div className="text-sm text-gray-500">{o.ref_code} — {o.ref_name}</div>
+              <div className="text-sm text-gray-500">{o.color_name} · {o.quantity} {UNIT_LABELS[o.unit]}</div>
             </button>
           ))}
         </div>
@@ -536,7 +536,7 @@ function OperatorPage({machineId}) {
   const weighing = shift?.weighing||[];
   const totRolls = entries.reduce((a,e)=>a+(e.rolls_bundles||0),0);
   const totMeters = entries.reduce((a,e)=>a+(e.meters_pieces||0),0);
-  const totOk@ = entries.reduce((a,e)=>a+(e.pieces_ok||0),0);
+  const totOk = entries.reduce((a,e)=>a+(e.pieces_ok||0),0);
   const totRej = entries.reduce((a,e)=>a+(e.rejected||0)+(e.pieces_rejected||0),0);
   const totStop = stoppages.reduce((a,s)=>a+(s.duration_minutes||0),0);
   const isExtrusao = shift.machine_type==='extrusao';
@@ -553,22 +553,22 @@ function OperatorPage({machineId}) {
               <span className="text-sm opacity-80">{shift.order_number}</span>
             </div>
             <div className="text-sm opacity-80 mt-0.5">
-              {shift.ref_code&&<span>{shift.ref_code} Â· </span>}
+              {shift.ref_code&&<span>{shift.ref_code} · </span>}
               <span>{shift.operator_name} ({shift.operator_number})</span>
-              <span className="ml-2">{shift.date} Â· {shift.start_time}</span>
+              <span className="ml-2">{shift.date} · {shift.start_time}</span>
             </div>
           </div>
           <Btn variant="danger" size="sm" onClick={()=>setModal('close')}>Fechar Turno</Btn>
         </div>
       </div>
 
-      {/* ReferÃªncia em destaque */}
+      {/* Referência em destaque */}
       {shift.ref_code&&(
         <div className={`${isExtrusao?'bg-blue-50 border-blue-200':'bg-orange-50 border-orange-200'} border-b px-4 py-4`}>
           <div className="max-w-4xl mx-auto flex items-center gap-4">
             <div className={`w-1 h-12 rounded-full ${isExtrusao?'bg-blue-500':'bg-orange-500'}`}/>
             <div>
-              <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-0.5">Produto em produÃ§Ã£o</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-0.5">Produto em produção</div>
               <div className="text-2xl font-extrabold text-gray-900 leading-none">{shift.ref_name||shift.ref_code}</div>
               {shift.ref_name&&<div className="text-xs text-gray-400 font-mono mt-0.5">{shift.ref_code}</div>}
             </div>
@@ -589,7 +589,7 @@ function OperatorPage({machineId}) {
           </div>
           {shift.quantity>0&&(()=>{
             // Usa totais acumulados da ORDEM inteira (todos os turnos anteriores + atual)
-            // Se orderTotals ainda nÃ£o chegou, faz fallback para as entradas do turno atual
+            // Se orderTotals ainda não chegou, faz fallback para as entradas do turno atual
             const ot = shift.orderTotals;
             const producedOrder = ot
               ? (isExtrusao ? Number(ot.total_meters||0) : Number(ot.total_pieces_ok||0))
@@ -621,9 +621,9 @@ function OperatorPage({machineId}) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {isExtrusao ? <>
             <KpiCard label="Rolos/Atados" value={totRolls} color="blue"/>
-            <KpiCard label="Metros/PeÃ§as" value={totMeters} color="blue"/>
+            <KpiCard label="Metros/Peças" value={totMeters} color="blue"/>
           </> : <>
-            <KpiCard label="PeÃ§as OK" value={totOk} color="green"/>
+            <KpiCard label="Peças OK" value={totOk} color="green"/>
           </>}
           <KpiCard label="Rejeitados" value={totRej} color="red"/>
           <KpiCard label="Paragens" value={`${totStop} min`} color="amber"/>
@@ -632,11 +632,11 @@ function OperatorPage({machineId}) {
         {/* Production entries */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="font-bold text-gray-900">ProduÃ§Ã£o</h2>
+            <h2 className="font-bold text-gray-900">Produção</h2>
             <Btn size="sm" onClick={()=>setModal('entry')}>+ Adicionar</Btn>
           </div>
           {entries.length===0 ? (
-            <EmptyState icon="ð¦" title="Sem registos" desc="Clque em Adicionar para registar produÃ§Ã£o"/>
+            <EmptyState icon="📦" title="Sem registos" desc="Clique em Adicionar para registar produção"/>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -645,15 +645,15 @@ function OperatorPage({machineId}) {
                     {isExtrusao ? <>
                       <th className="px-4 py-2 text-left">Cor</th>
                       <th className="px-4 py-2 text-right">Rolos/Atados</th>
-                      <th className="px-4 py-2 text-right">Metros/PeÃ§as</th>
+                      <th className="px-4 py-2 text-right">Metros/Peças</th>
                     </> : <>
                       <th className="px-4 py-2 text-left">Cav. Ativas</th>
                       <th className="px-4 py-2 text-right">Contador</th>
-                      <th className="px-4 py-2 text-right">PeÃ§as OK</th>
+                      <th className="px-4 py-2 text-right">Peças OK</th>
                     </>}
                     <th className="px-4 py-2 text-right">Rejeitados</th>
                     {!isExtrusao&&<th className="px-4 py-2 text-left">Acabamentos</th>}
-                    <th className="px-4 py-2 text-right">InÃ­cio</th>
+                    <th className="px-4 py-2 text-right">Início</th>
                     <th className="px-4 py-2 text-right">Fim</th>
                     <th className="px-4 py-2"/>
                   </tr>
@@ -662,22 +662,22 @@ function OperatorPage({machineId}) {
                   {entries.map(e=>(
                     <tr key={e.id} className="border-t table-row">
                       {isExtrusao ? <>
-                        <td className="px-4 py-2.5 font-medium">{e.color||'â'}</td>
+                        <td className="px-4 py-2.5 font-medium">{e.color||'—'}</td>
                         <td className="px-4 py-2.5 text-right">{e.rolls_bundles||0}</td>
                         <td className="px-4 py-2.5 text-right">{e.meters_pieces||0}</td>
                       </> : <>
-                        <td className="px-4 py-2.5">{e.active_cavities||'â'}</td>
-                        <td className="px-4 py-2.5 text-right">{e.counter||'â'}</td>
+                        <td className="px-4 py-2.5">{e.active_cavities||'—'}</td>
+                        <td className="px-4 py-2.5 text-right">{e.counter||'—'}</td>
                         <td className="px-4 py-2.5 text-right font-medium text-green-700">{e.pieces_ok||0}</td>
                       </>}
                       <td className="px-4 py-2.5 text-right text-red-600">{e.rejected||e.pieces_rejected||0}</td>
-                      {!isExtrusao&&<td className="px-4 py-2.5 text-gray-500 text-xs">{e.finishing||'â'}</td>}
-                      <td className="px-4 py-2.5 text-right text-gray-500 text-xs">{e.start_time||e.created_at?.slice(11,16)||'â'}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-500 text-xs">{e.end_time||'â'}</td>
+                      {!isExtrusao&&<td className="px-4 py-2.5 text-gray-500 text-xs">{e.finishing||'—'}</td>}
+                      <td className="px-4 py-2.5 text-right text-gray-500 text-xs">{e.start_time||e.created_at?.slice(11,16)||'—'}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-500 text-xs">{e.end_time||'—'}</td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center gap-1 justify-end">
-                          <button onClick={()=>setPalletEntry(e)} className="text-purple-400 hover:text-purple-600 text-xs" title="Ver cÃ³digo de palete">ð·ï¸</button>
-                          <button onClick={()=>setConfirmDel({type:'entry',id:e.id})} className="text-red-400 hover:text-red-600 text-xs">â</button>
+                          <button onClick={()=>setPalletEntry(e)} className="text-purple-400 hover:text-purple-600 text-xs" title="Ver código de palete">🏷️</button>
+                          <button onClick={()=>setConfirmDel({type:'entry',id:e.id})} className="text-red-400 hover:text-red-600 text-xs">✕</button>
                         </div>
                       </td>
                     </tr>
@@ -713,9 +713,9 @@ function OperatorPage({machineId}) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
-                  <th className="px-4 py-2 text-left">CÃ³digo</th>
-                  <th className="px-4 py-2 text-left">DescriÃ§Ã£o</th>
-                  <th className="px-4 py-2 text-right">DuraÃ§Ã£o</th>
+                  <th className="px-4 py-2 text-left">Código</th>
+                  <th className="px-4 py-2 text-left">Descrição</th>
+                  <th className="px-4 py-2 text-right">Duração</th>
                   <th className="px-4 py-2 text-left">Obs.</th>
                   <th className="px-4 py-2"/>
                 </tr>
@@ -723,12 +723,12 @@ function OperatorPage({machineId}) {
               <tbody>
                 {stoppages.map(s=>(
                   <tr key={s.id} className="border-t table-row">
-                    <td className="px-4 py-2.5 font-mono font-bold text-gray-700">{s.stop_code||'â'}</td>
-                    <td className="px-4 py-2.5">{s.stop_desc||'â'}</td>
+                    <td className="px-4 py-2.5 font-mono font-bold text-gray-700">{s.stop_code||'—'}</td>
+                    <td className="px-4 py-2.5">{s.stop_desc||'—'}</td>
                     <td className="px-4 py-2.5 text-right font-medium">{s.duration_minutes} min</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs">{s.notes||'â'}</td>
+                    <td className="px-4 py-2.5 text-gray-400 text-xs">{s.notes||'—'}</td>
                     <td className="px-4 py-2.5 text-right">
-                      <button onClick={()=>setConfirmDel({type:'stop',id:s.id})} className="text-red-400 hover:text-red-600 text-xs">â</button>
+                      <button onClick={()=>setConfirmDel({type:'stop',id:s.id})} className="text-red-400 hover:text-red-600 text-xs">✕</button>
                     </td>
                   </tr>
                 ))}
@@ -737,11 +737,11 @@ function OperatorPage({machineId}) {
           )}
         </div>
 
-        {/* Weighing (extrusÃ£o with has_weighing) */}
+        {/* Weighing (extrusão with has_weighing) */}
         {isExtrusao&&shift.has_weighing===1&&(
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="font-bold text-gray-900">Pesagem <span className="text-sm font-normal text-gray-400">({weighing.length} rolos Â· {weighing.reduce((a,w)=>a+(w.weight_kg||0),0).toFixed(2)} kg)</span></h2>
+              <h2 className="font-bold text-gray-900">Pesagem <span className="text-sm font-normal text-gray-400">({weighing.length} rolos · {weighing.reduce((a,w)=>a+(w.weight_kg||0),0).toFixed(2)} kg)</span></h2>
               <Btn size="sm" variant="outline" onClick={()=>setModal('weighing')}>+ Pesagem</Btn>
             </div>
             {weighing.length===0 ? (
@@ -750,7 +750,7 @@ function OperatorPage({machineId}) {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                   <tr>
-                    <th className="px-4 py-2 text-left">NÂº Rolo</th>
+                    <th className="px-4 py-2 text-left">Nº Rolo</th>
                     <th className="px-4 py-2 text-right">Peso (kg)</th>
                     <th className="px-4 py-2 text-left">Obs.</th>
                     <th className="px-4 py-2"/>
@@ -759,11 +759,11 @@ function OperatorPage({machineId}) {
                 <tbody>
                   {weighing.map(w=>(
                     <tr key={w.id} className="border-t table-row">
-                      <td className="px-4 py-2.5 font-mono font-bold">{w.rolo_number||'â'}</td>
+                      <td className="px-4 py-2.5 font-mono font-bold">{w.rolo_number||'—'}</td>
                       <td className="px-4 py-2.5 text-right font-medium">{w.weight_kg}</td>
-                      <td className="px-4 py-2.5 text-gray-400 text-xs">{w.notes||'â'}</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs">{w.notes||'—'}</td>
                       <td className="px-4 py-2.5 text-right">
-                        <button onClick={()=>setConfirmDel({type:'weigh',id:w.id})} className="text-red-400 hover:text-red-600 text-xs">â</button>
+                        <button onClick={()=>setConfirmDel({type:'weigh',id:w.id})} className="text-red-400 hover:text-red-600 text-xs">✕</button>
                       </td>
                     </tr>
                   ))}
@@ -777,8 +777,8 @@ function OperatorPage({machineId}) {
         {/* Order History section */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b cursor-pointer" onClick={()=>{ if(!historyOpen&&shift?.order_id) loadOrderHistory(shift.order_id); setHistoryOpen(h=>!h); }}>
-            <h2 className="font-bold text-gray-900">ð HistÃ³rico desta Ordem</h2>
-            <span className="text-gray-400 text-sm">{historyOpen?'â²':'â¼'}</span>
+            <h2 className="font-bold text-gray-900">📚 Histórico desta Ordem</h2>
+            <span className="text-gray-400 text-sm">{historyOpen?'▲':'▼'}</span>
           </div>
           {historyOpen&&(
             <div>
@@ -791,12 +791,12 @@ function OperatorPage({machineId}) {
                         <th className="px-3 py-2 text-left">Data</th>
                         <th className="px-3 py-2 text-left">T.</th>
                         <th className="px-3 py-2 text-left">Operador</th>
-                        <th className="px-3 py-2 text-left">MÃ¡quina</th>
+                        <th className="px-3 py-2 text-left">Máquina</th>
                         {isExtrusao?<>
                           <th className="px-3 py-2 text-right">Rolos</th>
                           <th className="px-3 py-2 text-right">Metros</th>
                         </>:<>
-                          <th className="px-3 py-2 text-right">PeÃ§as OK</th>
+                          <th className="px-3 py-2 text-right">Peças OK</th>
                           <th className="px-3 py-2 text-right">Contador</th>
                         </>}
                         <th className="px-3 py-2 text-right">Rej.</th>
@@ -815,10 +815,10 @@ function OperatorPage({machineId}) {
                             <td className="px-3 py-2 text-right font-medium">{e.meters_pieces||0}</td>
                           </>:<>
                             <td className="px-3 py-2 text-right font-medium text-green-700">{e.pieces_ok||0}</td>
-                            <td className="px-3 py-2 text-right">{e.counter||'â'}</td>
+                            <td className="px-3 py-2 text-right">{e.counter||'—'}</td>
                           </>}
                           <td className="px-3 py-2 text-right text-red-500">{e.rejected||e.pieces_rejected||0}</td>
-                          <td className="px-3 py-2 text-center">{e.validated?<span className="text-green-600 text-xs font-bold">â</span>:<span className="text-gray-300 text-xs">â</span>}</td>
+                          <td className="px-3 py-2 text-center">{e.validated?<span className="text-green-600 text-xs font-bold">✓</span>:<span className="text-gray-300 text-xs">—</span>}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -848,9 +848,9 @@ function OperatorPage({machineId}) {
       <AddEntryModal open={modal==='entry'} onClose={()=>setModal(null)} shift={shift} colors={colors} isExtrusao={isExtrusao} onSave={async(d)=>{ const res=await api.post('/api/production-entries',{shift_id:shift.id,...d}); await refresh(); return res; }}/>
       <AddStoppageModal open={modal==='stoppage'} onClose={()=>setModal(null)} codes={codes} onSave={async(d)=>{ await api.post('/api/stoppages',{shift_id:shift.id,...d}); await refresh(); setModal(null); }}/>
       {isExtrusao&&shift.has_weighing===1&&<AddWeighingModal open={modal==='weighing'} onClose={()=>setModal(null)} weighing={weighing} onSave={async(d)=>{ await api.post('/api/weighing',{shift_id:shift.id,...d}); await refresh(); setModal(null); }}/>}
-      <ConfirmModal open={modal==='close'} onClose={()=>setModal(null)} onConfirm={closeShift} title="Fechar turno" message="Confirmar o fecho do turno? Esta aÃ§Ã£o nÃ£o pode ser desfeita." variant="danger"/>
+      <ConfirmModal open={modal==='close'} onClose={()=>setModal(null)} onConfirm={closeShift} title="Fechar turno" message="Confirmar o fecho do turno? Esta ação não pode ser desfeita." variant="danger"/>
       <PalletCodeModal open={!!palletEntry} onClose={()=>setPalletEntry(null)} entry={palletEntry} shift={shift}/>
-      <ConfirmModal open={!!confirmDel} onClose={()=>setConfirmDel(null)} onConfirm={execDel} title="Apagar registo" message="Tem a certeza? Esta aÃ§Ã£o nÃ£o pode ser desfeita." variant="danger"/>
+      <ConfirmModal open={!!confirmDel} onClose={()=>setConfirmDel(null)} onConfirm={execDel} title="Apagar registo" message="Tem a certeza? Esta ação não pode ser desfeita." variant="danger"/>
     </div>
   );
 }
@@ -865,22 +865,22 @@ function PalletCodeModal({open,onClose,entry,shift}) {
   const opNum = String(shift.operator_number||'000').padStart(3,'0');
   const code = `T${shift.shift_number}-${dd}${mm}${yy}-${opNum}-${String(entry.id).padStart(4,'0')}`;
   return (
-    <Modal open={open} onClose={onClose} title="CÃ³digo de Palete" size="sm">
+    <Modal open={open} onClose={onClose} title="Código de Palete" size="sm">
       <div className="text-center py-2">
         <div className="bg-gray-900 text-green-400 rounded-xl p-6 font-mono mb-4">
-          <div className="text-xs text-gray-500 mb-2 uppercase tracking-widest">CÃ³digo de Palete</div>
+          <div className="text-xs text-gray-500 mb-2 uppercase tracking-widest">Código de Palete</div>
           <div className="text-3xl font-extrabold tracking-widest">{code}</div>
         </div>
         <div className="text-left bg-gray-50 rounded-xl p-4 text-sm space-y-1.5 mb-4">
-          <div className="flex justify-between"><span className="text-gray-500">Produto:</span><span className="font-semibold">{shift.ref_name||shift.ref_code||'â'}</span></div>
-          <div className="flex justify-between"><span className="text-gray-500">Ref.:</span><span className="font-mono text-xs">{shift.ref_code||'â'}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Produto:</span><span className="font-semibold">{shift.ref_name||shift.ref_code||'—'}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Ref.:</span><span className="font-mono text-xs">{shift.ref_code||'—'}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Data:</span><span>{dd}/{mm}/{yy}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Turno:</span><span>{SHIFTS[shift.shift_number]}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Operador:</span><span>{shift.operator_name} (#{shift.operator_number})</span></div>
-          {entry.pieces_ok>0&&<div className="flex justify-between"><span className="text-gray-500">PeÃ§as OK:</span><span className="font-bold text-green-700">{entry.pieces_ok}</span></div>}
-          {entry.meters_pieces>0&&<div className="flex justify-between"><span className="text-gray-500">Metros/PeÃ§as:</span><span className="font-bold">{entry.meters_pieces}</span></div>}
+          {entry.pieces_ok>0&&<div className="flex justify-between"><span className="text-gray-500">Peças OK:</span><span className="font-bold text-green-700">{entry.pieces_ok}</span></div>}
+          {entry.meters_pieces>0&&<div className="flex justify-between"><span className="text-gray-500">Metros/Peças:</span><span className="font-bold">{entry.meters_pieces}</span></div>}
         </div>
-        <p className="text-xs text-gray-400 mb-4">Escreva este cÃ³digo na etiqueta da palete</p>
+        <p className="text-xs text-gray-400 mb-4">Escreva este código na etiqueta da palete</p>
         <Btn className="w-full" onClick={onClose}>Fechar</Btn>
       </div>
     </Modal>
@@ -926,13 +926,13 @@ function AddEntryModal({open,onClose,shift,colors,isExtrusao,onSave}) {
 
   return (
     <>
-    <Modal open={open&&!savedEntry} onClose={onClose} title="Registar ProduÃ§Ã£o">
+    <Modal open={open&&!savedEntry} onClose={onClose} title="Registar Produção">
       <div className="space-y-4">
         {isExtrusao ? <>
-          <Select label="Cor" value={form.color} onChange={e=>set('color',e.target.value)} placeholder="â selecionar cor â" options={colors.map(c=>({value:c.name,label:`${c.code} â ${c.name}`}))}/>
+          <Select label="Cor" value={form.color} onChange={e=>set('color',e.target.value)} placeholder="— selecionar cor —" options={colors.map(c=>({value:c.name,label:`${c.code} — ${c.name}`}))}/>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Rolos / Atados" required><input type="number" min="0" step="1" value={form.rolls_bundles} onChange={e=>set('rolls_bundles',e.target.value)} placeholder="0" className={inp(errors.rolls_bundles)}/></Field>
-            <Field label="Metros / PeÃ§as" required><input type="number" min="0" step="0.1" value={form.meters_pieces} onChange={e=>set('meters_pieces',e.target.value)} placeholder="0" className={inp(errors.meters_pieces)}/></Field>
+            <Field label="Metros / Peças" required><input type="number" min="0" step="0.1" value={form.meters_pieces} onChange={e=>set('meters_pieces',e.target.value)} placeholder="0" className={inp(errors.meters_pieces)}/></Field>
           </div>
           <Input label="Rejeitados" type="number" min="0" value={form.rejected} onChange={e=>set('rejected',e.target.value)} placeholder="0"/>
         </> : <>
@@ -941,28 +941,28 @@ function AddEntryModal({open,onClose,shift,colors,isExtrusao,onSave}) {
             <Field label="Contador" required><input type="number" min="0" value={form.counter} onChange={e=>set('counter',e.target.value)} placeholder="0" className={inp(errors.counter)}/></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="PeÃ§as OK" required><input type="number" min="0" value={form.pieces_ok} onChange={e=>set('pieces_ok',e.target.value)} placeholder="0" className={inp(errors.pieces_ok)}/></Field>
+            <Field label="Peças OK" required><input type="number" min="0" value={form.pieces_ok} onChange={e=>set('pieces_ok',e.target.value)} placeholder="0" className={inp(errors.pieces_ok)}/></Field>
             <Field label="Rejeitadas" required><input type="number" min="0" value={form.pieces_rejected} onChange={e=>set('pieces_rejected',e.target.value)} placeholder="0" className={inp(errors.pieces_rejected)}/></Field>
           </div>
           <div>
             <div className="text-sm font-semibold text-gray-700 mb-2">Acabamentos</div>
             <div className="flex gap-3">
               <button onClick={()=>set('finishing', form.finishing==='sim'?'':'sim')}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${form.finishing==='sim'?'bg-green-500 border-green-500 text-white':'border-gray-200 text-gray-700 hover:border-green-400'}`}>â Sim</button>
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${form.finishing==='sim'?'bg-green-500 border-green-500 text-white':'border-gray-200 text-gray-700 hover:border-green-400'}`}>✔ Sim</button>
               <button onClick={()=>set('finishing', form.finishing==='nao'?'':'nao')}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${form.finishing==='nao'?'bg-red-500 border-red-500 text-white':'border-gray-200 text-gray-700 hover:border-red-400'}`}>â NÃ£o</button>
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${form.finishing==='nao'?'bg-red-500 border-red-500 text-white':'border-gray-200 text-gray-700 hover:border-red-400'}`}>✕ Não</button>
             </div>
           </div>
         </>}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Hora InÃ­cio" required><input type="time" value={form.start_time} onChange={e=>set('start_time',e.target.value)} className={inp(errors.start_time)}/></Field>
+          <Field label="Hora Início" required><input type="time" value={form.start_time} onChange={e=>set('start_time',e.target.value)} className={inp(errors.start_time)}/></Field>
           <Field label="Hora Fim" required><input type="time" value={form.end_time} onChange={e=>set('end_time',e.target.value)} className={inp(errors.end_time)}/></Field>
         </div>
-        {Object.keys(errors).length>0&&<Alert type="error">Preencha os campos obrigatÃ³rios assinalados.</Alert>}
-        <Input label="ObservaÃ§Ãµes" value={form.notes} onChange={e=>set('notes',e.target.value)} placeholder="Opcional"/>
+        {Object.keys(errors).length>0&&<Alert type="error">Preencha os campos obrigatórios assinalados.</Alert>}
+        <Input label="Observações" value={form.notes} onChange={e=>set('notes',e.target.value)} placeholder="Opcional"/>
         <div className="flex gap-3 justify-end pt-2">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
@@ -983,13 +983,13 @@ function AddStoppageModal({open,onClose,codes,onSave}) {
   return (
     <Modal open={open} onClose={onClose} title="Registar Paragem">
       <div className="space-y-4">
-        <Select label="Motivo de Paragem" required value={form.stoppage_code_id} onChange={e=>setForm(f=>({...f,stoppage_code_id:e.target.value}))} placeholder="â selecionar motivo â"
-          options={codes.map(c=>({value:c.id,label:`${c.code} â ${c.description}`}))}/>
-        <Input label="DuraÃ§Ã£o (minutos)" required type="number" min="1" value={form.duration_minutes} onChange={e=>setForm(f=>({...f,duration_minutes:e.target.value}))} placeholder="ex: 15"/>
-        <Input label="ObservaÃ§Ãµes" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Opcional"/>
+        <Select label="Motivo de Paragem" required value={form.stoppage_code_id} onChange={e=>setForm(f=>({...f,stoppage_code_id:e.target.value}))} placeholder="— selecionar motivo —"
+          options={codes.map(c=>({value:c.id,label:`${c.code} — ${c.description}`}))}/>
+        <Input label="Duração (minutos)" required type="number" min="1" value={form.duration_minutes} onChange={e=>setForm(f=>({...f,duration_minutes:e.target.value}))} placeholder="ex: 15"/>
+        <Input label="Observações" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Opcional"/>
         <div className="flex gap-3 justify-end pt-2">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading||!form.stoppage_code_id||!form.duration_minutes}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading||!form.stoppage_code_id||!form.duration_minutes}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
@@ -1010,34 +1010,34 @@ function AddWeighingModal({open,onClose,weighing,onSave}) {
     <Modal open={open} onClose={onClose} title="Registar Pesagem">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="NÂº Rolo" type="number" min="1" value={form.rolo_number} onChange={e=>setForm(f=>({...f,rolo_number:e.target.value}))} placeholder={String(nextRolo)}/>
+          <Input label="Nº Rolo" type="number" min="1" value={form.rolo_number} onChange={e=>setForm(f=>({...f,rolo_number:e.target.value}))} placeholder={String(nextRolo)}/>
           <Input label="Peso (kg)" required type="number" min="0" step="0.001" value={form.weight_kg} onChange={e=>setForm(f=>({...f,weight_kg:e.target.value}))} placeholder="0.000" autoFocus/>
         </div>
-        <Input label="ObservaÃ§Ãµes" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Opcional"/>
+        <Input label="Observações" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Opcional"/>
         <div className="flex gap-3 justify-end pt-2">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading||!form.weight_kg}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading||!form.weight_kg}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
   );
 }
 
-// âââ ADMIN LAYOUT âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── ADMIN LAYOUT ─────────────────────────────────────────────────────────────
 function AdminLayout({page,setPage,children}) {
   const {logout} = useAuth();
   const [sideOpen,setSideOpen] = useState(false);
   const nav = [
-    {id:'dashboard',icon:'ð',label:'Dashboard'},
-    {id:'orders',icon:'ð',label:'Ordens de ProduÃ§Ã£o'},
-    {id:'references',icon:'ð',label:'ReferÃªncias'},
-    {id:'colors',icon:'ð¨',label:'Cores'},
-    {id:'operators',icon:'ð·',label:'Operadores'},
-    {id:'machines',icon:'ð­',label:'MÃ¡quinas'},
-    {id:'stoppage-codes',icon:'â',label:'CÃ³digos Paragem'},
-    {id:'producao',icon:'ð¦',label:'AnÃ¡lise de ProduÃ§Ã£o'},
-    {id:'reports',icon:'ð',label:'RelatÃ³rios'},
-    {id:'efficiency',icon:'â¡',label:'EficiÃªncia & Qualidade'},
+    {id:'dashboard',icon:'📊',label:'Dashboard'},
+    {id:'orders',icon:'📋',label:'Ordens de Produção'},
+    {id:'references',icon:'📁',label:'Referências'},
+    {id:'colors',icon:'🎨',label:'Cores'},
+    {id:'operators',icon:'👷',label:'Operadores'},
+    {id:'machines',icon:'🏭',label:'Máquinas'},
+    {id:'stoppage-codes',icon:'⛔',label:'Códigos Paragem'},
+    {id:'producao',icon:'📦',label:'Análise de Produção'},
+    {id:'reports',icon:'📈',label:'Relatórios'},
+    {id:'efficiency',icon:'⚡',label:'Eficiência & Qualidade'},
   ];
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -1045,10 +1045,10 @@ function AdminLayout({page,setPage,children}) {
       <aside className={`${sideOpen?'translate-x-0':'-translate-x-full'} fixed inset-y-0 left-0 z-40 w-64 bg-white border-r shadow-lg transition-transform md:translate-x-0 md:static md:shadow-none`}>
         <div className="p-4 border-b flex items-center justify-between">
           <div>
-            <div className="font-bold text-gray-900">ProduÃ§Ã£o</div>
-            <div className="text-xs text-gray-400">Ãrea de AdministraÃ§Ã£o</div>
+            <div className="font-bold text-gray-900">Produção</div>
+            <div className="text-xs text-gray-400">Área de Administração</div>
           </div>
-          <button className="md:hidden text-gray-400" onClick={()=>setSideOpen(false)}>â</button>
+          <button className="md:hidden text-gray-400" onClick={()=>setSideOpen(false)}>✕</button>
         </div>
         <nav className="p-3 space-y-1">
           {nav.map(n=>(
@@ -1058,14 +1058,14 @@ function AdminLayout({page,setPage,children}) {
           ))}
         </nav>
         <div className="absolute bottom-0 left-0 right-0 p-3 border-t">
-          <div className="sidebar-item text-red-500 hover:text-red-600 hover:bg-red-50" onClick={logout}>ðª Sair</div>
+          <div className="sidebar-item text-red-500 hover:text-red-600 hover:bg-red-50" onClick={logout}>🚪 Sair</div>
         </div>
       </aside>
       {sideOpen&&<div className="fixed inset-0 z-30 bg-black/30 md:hidden" onClick={()=>setSideOpen(false)}/>}
       {/* Main */}
       <main className="flex-1 min-w-0">
         <header className="bg-white border-b px-4 py-3 flex items-center justify-between md:hidden">
-          <button onClick={()=>setSideOpen(true)} className="text-gray-600 text-xl">â°</button>
+          <button onClick={()=>setSideOpen(true)} className="text-gray-600 text-xl">☰</button>
           <span className="font-bold text-gray-900">{nav.find(n=>n.id===page)?.label}</span>
           <div/>
         </header>
@@ -1075,7 +1075,7 @@ function AdminLayout({page,setPage,children}) {
   );
 }
 
-// âââ DASHBOARD ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function Dashboard() {
   const [data,setData] = useState(null);
   const chartRef1 = useRef(null);
@@ -1092,8 +1092,8 @@ function Dashboard() {
     chart1.current = new Chart(chartRef1.current, {
       type:'bar',
       data:{ labels, datasets:[
-        {label:'ExtrusÃ£o (metros)',data:data.daily.map(d=>d.ext_meters||0),backgroundColor:'rgba(37,99,235,.7)',borderRadius:4},
-        {label:'InjeÃ§Ã£o (peÃ§as OK)',data:data.daily.map(d=>d.inj_pieces||0),backgroundColor:'rgba(234,88,12,.7)',borderRadius:4},
+        {label:'Extrusão (metros)',data:data.daily.map(d=>d.ext_meters||0),backgroundColor:'rgba(37,99,235,.7)',borderRadius:4},
+        {label:'Injeção (peças OK)',data:data.daily.map(d=>d.inj_pieces||0),backgroundColor:'rgba(234,88,12,.7)',borderRadius:4},
       ]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true}}}
     });
@@ -1121,14 +1121,14 @@ function Dashboard() {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard label="Turnos hoje" value={p.shift_count||0} color="blue"/>
-        <KpiCard label="Metros extrusÃ£o" value={(p.total_meters||0).toFixed(0)} color="blue"/>
-        <KpiCard label="PeÃ§as injeÃ§Ã£o" value={p.total_pieces_ok||0} color="green"/>
-        <KpiCard label="Paragens hoje" value={`${s.total_min||0} min`} sub={`${s.count||0} ocorrÃªncias`} color="amber"/>
+        <KpiCard label="Metros extrusão" value={(p.total_meters||0).toFixed(0)} color="blue"/>
+        <KpiCard label="Peças injeção" value={p.total_pieces_ok||0} color="green"/>
+        <KpiCard label="Paragens hoje" value={`${s.total_min||0} min`} sub={`${s.count||0} ocorrências`} color="amber"/>
       </div>
 
       {/* Machine status */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b font-bold text-gray-900">Estado das MÃ¡quinas</div>
+        <div className="p-4 border-b font-bold text-gray-900">Estado das Máquinas</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 p-4">
           {data.machines.map(m=>(
             <div key={m.id} className={`rounded-lg p-3 border-2 ${m.shift_id?'border-green-300 bg-green-50':'border-gray-200 bg-gray-50'}`}>
@@ -1138,7 +1138,7 @@ function Dashboard() {
               </div>
               {m.shift_id ? <>
                 <div className="text-xs text-gray-600">{m.operator_name}</div>
-                <div className="text-xs text-gray-500">{m.order_number} Â· {SHIFTS[m.shift_number]}</div>
+                <div className="text-xs text-gray-500">{m.order_number} · {SHIFTS[m.shift_number]}</div>
               </> : <div className="text-xs text-gray-400">Sem turno ativo</div>}
             </div>
           ))}
@@ -1147,7 +1147,7 @@ function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="font-bold text-gray-900 mb-3">ProduÃ§Ã£o â Ãltimos 7 dias</div>
+          <div className="font-bold text-gray-900 mb-3">Produção — Últimos 7 dias</div>
           <div className="chart-container"><canvas ref={chartRef1}/></div>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4">
@@ -1161,7 +1161,7 @@ function Dashboard() {
           <div className="p-4 border-b font-bold text-gray-900">Top Paragens (7 dias)</div>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-              <tr><th className="px-4 py-2 text-left">CÃ³digo</th><th className="px-4 py-2 text-left">DescriÃ§Ã£o</th><th className="px-4 py-2 text-left">Categoria</th><th className="px-4 py-2 text-right">OcorrÃªncias</th><th className="px-4 py-2 text-right">Tempo total</th></tr>
+              <tr><th className="px-4 py-2 text-left">Código</th><th className="px-4 py-2 text-left">Descrição</th><th className="px-4 py-2 text-left">Categoria</th><th className="px-4 py-2 text-right">Ocorrências</th><th className="px-4 py-2 text-right">Tempo total</th></tr>
             </thead>
             <tbody>
               {data.topStops.map(s=>(
@@ -1181,7 +1181,7 @@ function Dashboard() {
   );
 }
 
-// âââ CRUD TABLE HELPER ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── CRUD TABLE HELPER ────────────────────────────────────────────────────────
 function CrudPage({title,icon,cols,data,onAdd,onEdit,onDelete,loading}) {
   const [confirmDel,setConfirmDel] = useState(null);
   const [delErr,setDelErr] = useState('');
@@ -1207,10 +1207,10 @@ function CrudPage({title,icon,cols,data,onAdd,onEdit,onDelete,loading}) {
               <tbody>
                 {data.map((row,i)=>(
                   <tr key={row.id||i} className="border-t table-row">
-                    {cols.map(c=><td key={c.key} className={`px-4 py-2.5 ${c.right?'text-right':''} ${c.cls?c.cls(row):''}`}>{c.render?c.render(row):row[c.key]??'â'}</td>)}
+                    {cols.map(c=><td key={c.key} className={`px-4 py-2.5 ${c.right?'text-right':''} ${c.cls?c.cls(row):''}`}>{c.render?c.render(row):row[c.key]??'—'}</td>)}
                     <td className="px-4 py-2.5 text-right flex items-center justify-end gap-2">
                       <Btn size="sm" variant="outline" onClick={()=>onEdit(row)}>Editar</Btn>
-                      {onDelete&&<button onClick={()=>{setDelErr('');setConfirmDel(row);}} className="text-red-400 hover:text-red-600 px-2 py-1 rounded text-xs font-medium hover:bg-red-50 transition-colors" title="Eliminar">ð</button>}
+                      {onDelete&&<button onClick={()=>{setDelErr('');setConfirmDel(row);}} className="text-red-400 hover:text-red-600 px-2 py-1 rounded text-xs font-medium hover:bg-red-50 transition-colors" title="Eliminar">🗑</button>}
                     </td>
                   </tr>
                 ))}
@@ -1225,7 +1225,7 @@ function CrudPage({title,icon,cols,data,onAdd,onEdit,onDelete,loading}) {
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <h3 className="font-bold text-gray-900 text-lg mb-2">Eliminar registo?</h3>
             <p className="text-gray-600 text-sm mb-1">Tens a certeza que queres eliminar <strong>{confirmDel.name||confirmDel.code||confirmDel.order_number||`#${confirmDel.id}`}</strong>?</p>
-            <p className="text-red-500 text-xs mb-4">Esta aÃ§Ã£o nÃ£o pode ser revertida.</p>
+            <p className="text-red-500 text-xs mb-4">Esta ação não pode ser revertida.</p>
             {delErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm mb-3">{delErr}</div>}
             <div className="flex gap-3 justify-end">
               <Btn variant="outline" onClick={()=>setConfirmDel(null)}>Cancelar</Btn>
@@ -1238,7 +1238,7 @@ function CrudPage({title,icon,cols,data,onAdd,onEdit,onDelete,loading}) {
   );
 }
 
-// âââ ORDERS PAGE âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── ORDERS PAGE ─────────────────────────────────────────────────────────────
 function OrdersPage() {
   const [orders,setOrders] = useState([]);
   const [loading,setLoading] = useState(true);
@@ -1264,17 +1264,17 @@ function OrdersPage() {
   };
 
   const cols = [
-    {key:'order_number',label:'NÂº Ordem',cls:()=>'font-mono font-bold'},
-    {key:'ref_code',label:'ReferÃªncia',render:r=><span>{r.ref_code} <span className="text-gray-400">{r.ref_name}</span></span>},
-    {key:'color_name',label:'Cor',render:r=>r.color_name?<span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block" style={{background:r.hex_color}}/>{r.color_name}</span>:'â'},
-    {key:'machine_name',label:'MÃ¡quina'},
-    {key:'quantity',label:'Qtd.',render:r=>`${r.quantity||'â'} ${UNIT_LABELS[r.unit]||''}`},
+    {key:'order_number',label:'Nº Ordem',cls:()=>'font-mono font-bold'},
+    {key:'ref_code',label:'Referência',render:r=><span>{r.ref_code} <span className="text-gray-400">{r.ref_name}</span></span>},
+    {key:'color_name',label:'Cor',render:r=>r.color_name?<span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block" style={{background:r.hex_color}}/>{r.color_name}</span>:'—'},
+    {key:'machine_name',label:'Máquina'},
+    {key:'quantity',label:'Qtd.',render:r=>`${r.quantity||'—'} ${UNIT_LABELS[r.unit]||''}`},
     {key:'status',label:'Estado',render:r=><Badge text={STATUS_LABELS[r.status]} color={r.status==='active'?'green':r.status==='completed'?'blue':r.status==='cancelled'?'red':'gray'}/>},
   ];
 
   return (
     <>
-      <CrudPage title="Ordens de ProduÃ§Ã£o" icon="ð" cols={cols} data={orders} loading={loading}
+      <CrudPage title="Ordens de Produção" icon="📋" cols={cols} data={orders} loading={loading}
         onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
       <OrderForm open={modal==='form'} onClose={()=>{setModal(null);setEditing(null);}} onSave={save} editing={editing} refs={refs} colors={colors} machines={machines} orders={orders}/>
     </>
@@ -1321,27 +1321,27 @@ function OrderForm({open,onClose,onSave,editing,refs,colors,machines,orders}) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={editing?'Editar Ordem':'Nova Ordem de ProduÃ§Ã£o'} size="lg">
+    <Modal open={open} onClose={onClose} title={editing?'Editar Ordem':'Nova Ordem de Produção'} size="lg">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="NÂº Ordem" required value={form.order_number} onChange={e=>set('order_number',e.target.value)} placeholder="ex: OP-2024-001"/>
-          <Select label="Estado" value={form.status} onChange={e=>set('status',e.target.value)} options={[{value:'active',label:'Ativa'},{value:'pending',label:'Pendente'},{value:'completed',label:'ConcluÃ­da'},{value:'cancelled',label:'Cancelada'}]}/>
+          <Input label="Nº Ordem" required value={form.order_number} onChange={e=>set('order_number',e.target.value)} placeholder="ex: OP-2024-001"/>
+          <Select label="Estado" value={form.status} onChange={e=>set('status',e.target.value)} options={[{value:'active',label:'Ativa'},{value:'pending',label:'Pendente'},{value:'completed',label:'Concluída'},{value:'cancelled',label:'Cancelada'}]}/>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Select label="ReferÃªncia" value={form.reference_id||''} onChange={e=>set('reference_id',e.target.value)} placeholder="â selecionar â" options={refs.map(r=>({value:r.id,label:`${r.code} â ${r.name}`}))}/>
-          <Select label="Cor" value={form.color_id||''} onChange={e=>set('color_id',e.target.value)} placeholder="â selecionar â" options={colors.map(c=>({value:c.id,label:`${c.code} â ${c.name}`}))}/>
+          <Select label="Referência" value={form.reference_id||''} onChange={e=>set('reference_id',e.target.value)} placeholder="— selecionar —" options={refs.map(r=>({value:r.id,label:`${r.code} — ${r.name}`}))}/>
+          <Select label="Cor" value={form.color_id||''} onChange={e=>set('color_id',e.target.value)} placeholder="— selecionar —" options={colors.map(c=>({value:c.id,label:`${c.code} — ${c.name}`}))}/>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Select label="MÃ¡quina" value={form.machine_id||''} onChange={e=>handleMachineChange(e.target.value)} placeholder="â selecionar â" options={machines.map(m=>({value:m.id,label:m.name}))}/>
+          <Select label="Máquina" value={form.machine_id||''} onChange={e=>handleMachineChange(e.target.value)} placeholder="— selecionar —" options={machines.map(m=>({value:m.id,label:m.name}))}/>
           <div className="grid grid-cols-2 gap-2">
             <Input label="Quantidade" type="number" min="0" value={form.quantity} onChange={e=>set('quantity',e.target.value)}/>
-            <Select label="Unidade" value={form.unit} onChange={e=>set('unit',e.target.value)} options={machineType==='injecao' ? [{value:'pecas',label:'PeÃ§as'}] : [{value:'pecas',label:'PeÃ§as'},{value:'metros',label:'Metros'},{value:'atados',label:'Atados'}]}/>
+            <Select label="Unidade" value={form.unit} onChange={e=>set('unit',e.target.value)} options={machineType==='injecao' ? [{value:'pecas',label:'Peças'}] : [{value:'pecas',label:'Peças'},{value:'metros',label:'Metros'},{value:'atados',label:'Atados'}]}/>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Input label="Ciclo (segundos)" type="number" min="0" step="0.1" value={form.cycle_time_seconds||''} onChange={e=>set('cycle_time_seconds',e.target.value)} placeholder="ex: 30"/>
-            <p className="text-xs text-gray-400 mt-1">Tempo de ciclo da mÃ¡quina para cÃ¡lculo de eficiÃªncia</p>
+            <p className="text-xs text-gray-400 mt-1">Tempo de ciclo da máquina para cálculo de eficiência</p>
           </div>
         </div>
         {/* MP Phases */}
@@ -1355,24 +1355,24 @@ function OrderForm({open,onClose,onSave,editing,refs,colors,machines,orders}) {
               <div key={i} className="flex items-center gap-2">
                 <span className="text-xs text-gray-400 w-14">Fase {p.phase}</span>
                 <input type="number" min="0" step="0.1" value={p.quantity} onChange={e=>setPhase(i,e.target.value)} placeholder="kg" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-                {phases.length>1&&<button onClick={()=>delPhase(i)} className="text-red-400 hover:text-red-600 text-xs px-2">â</button>}
+                {phases.length>1&&<button onClick={()=>delPhase(i)} className="text-red-400 hover:text-red-600 text-xs px-2">✕</button>}
               </div>
             ))}
           </div>
         </div>
-        <Textarea label="ObservaÃ§Ãµes" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
+        <Textarea label="Observações" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
         {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading||!form.order_number}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading||!form.order_number}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
   );
 }
 
-// âââ REFERENCES PAGE âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── REFERENCES PAGE ─────────────────────────────────────────────────────────
 function ReferencesPage() {
   const [data,setData] = useState([]);
   const [loading,setLoading] = useState(true);
@@ -1383,17 +1383,17 @@ function ReferencesPage() {
   const save = async(form)=>{ if(editing) await api.put(`/api/references/${editing.id}`,form); else await api.post('/api/references',form); await load(); setModal(null); setEditing(null); };
   const del = async(id)=>{ await api.del(`/api/references/${id}`); await load(); };
   const cols = [
-    {key:'code',label:'CÃ³digo',cls:()=>'font-mono font-bold'},
+    {key:'code',label:'Código',cls:()=>'font-mono font-bold'},
     {key:'name',label:'Nome'},
-    {key:'machine_type',label:'Tipo',render:r=><Badge text={r.machine_type==='extrusao'?'ExtrusÃ£o':'InjeÃ§Ã£o'} color={r.machine_type==='extrusao'?'blue':'orange'}/>},
-    {key:'raw_material',label:'MatÃ©ria-Prima'},
+    {key:'machine_type',label:'Tipo',render:r=><Badge text={r.machine_type==='extrusao'?'Extrusão':'Injeção'} color={r.machine_type==='extrusao'?'blue':'orange'}/>},
+    {key:'raw_material',label:'Matéria-Prima'},
     {key:'weight_per_ml',label:'Peso/ml'},
-    {key:'weight_per_piece',label:'Peso/peÃ§a'},
+    {key:'weight_per_piece',label:'Peso/peça'},
     {key:'active',label:'Estado',render:r=><Badge text={r.active?'Ativa':'Inativa'} color={r.active?'green':'gray'}/>},
   ];
   return (
     <>
-      <CrudPage title="ReferÃªncias" icon="ð" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}} onDelete={del}/>
+      <CrudPage title="Referências" icon="📁" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}} onDelete={del}/>
       <RefForm open={modal==='form'} onClose={()=>{setModal(null);setEditing(null);}} onSave={save} editing={editing}/>
     </>
   );
@@ -1407,17 +1407,17 @@ function RefForm({open,onClose,onSave,editing}) {
   const set = (k,v)=>setForm(f=>({...f,[k]:v}));
   const submit = async()=>{ setFormErr(''); setLoading(true); try{await onSave({...form,weight_per_ml:Number(form.weight_per_ml)||null,weight_per_piece:Number(form.weight_per_piece)||null,active:form.active?1:0});}catch(e){setFormErr(e.message);}finally{setLoading(false);} };
   return (
-    <Modal open={open} onClose={onClose} title={editing?'Editar ReferÃªncia':'Nova ReferÃªncia'}>
+    <Modal open={open} onClose={onClose} title={editing?'Editar Referência':'Nova Referência'}>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="CÃ³digo" required value={form.code} onChange={e=>set('code',e.target.value)}/>
-          <Select label="Tipo de MÃ¡quina" required value={form.machine_type} onChange={e=>set('machine_type',e.target.value)} options={[{value:'extrusao',label:'ExtrusÃ£o'},{value:'injecao',label:'InjeÃ§Ã£o'}]}/>
+          <Input label="Código" required value={form.code} onChange={e=>set('code',e.target.value)}/>
+          <Select label="Tipo de Máquina" required value={form.machine_type} onChange={e=>set('machine_type',e.target.value)} options={[{value:'extrusao',label:'Extrusão'},{value:'injecao',label:'Injeção'}]}/>
         </div>
-        <Input label="Nome / DescriÃ§Ã£o" required value={form.name} onChange={e=>set('name',e.target.value)}/>
-        <Input label="MatÃ©ria-Prima" value={form.raw_material||''} onChange={e=>set('raw_material',e.target.value)}/>
+        <Input label="Nome / Descrição" required value={form.name} onChange={e=>set('name',e.target.value)}/>
+        <Input label="Matéria-Prima" value={form.raw_material||''} onChange={e=>set('raw_material',e.target.value)}/>
         <div className="grid grid-cols-2 gap-3">
           <Input label="Peso/ml (kg)" type="number" step="0.001" value={form.weight_per_ml||''} onChange={e=>set('weight_per_ml',e.target.value)}/>
-          <Input label="Peso/peÃ§a (kg)" type="number" step="0.001" value={form.weight_per_piece||''} onChange={e=>set('weight_per_piece',e.target.value)}/>
+          <Input label="Peso/peça (kg)" type="number" step="0.001" value={form.weight_per_piece||''} onChange={e=>set('weight_per_piece',e.target.value)}/>
         </div>
         <Textarea label="Notas" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativa'},{value:0,label:'Inativa'}]}/>}
@@ -1427,14 +1427,14 @@ function RefForm({open,onClose,onSave,editing}) {
         {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading||!form.code||!form.name}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading||!form.code||!form.name}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
   );
 }
 
-// âââ COLORS PAGE âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── COLORS PAGE ─────────────────────────────────────────────────────────────
 function ColorsPage() {
   const [data,setData] = useState([]);
   const [loading,setLoading] = useState(true);
@@ -1445,14 +1445,14 @@ function ColorsPage() {
   const save = async(form)=>{ if(editing) await api.put(`/api/colors/${editing.id}`,form); else await api.post('/api/colors',form); await load(); setModal(null); setEditing(null); };
   const cols = [
     {key:'swatch',label:'',render:r=><span className="w-6 h-6 rounded-full border inline-block" style={{background:r.hex_color}}/>},
-    {key:'code',label:'CÃ³digo',cls:()=>'font-mono font-bold'},
+    {key:'code',label:'Código',cls:()=>'font-mono font-bold'},
     {key:'name',label:'Nome'},
     {key:'hex_color',label:'Hex',cls:()=>'font-mono text-gray-400'},
     {key:'active',label:'Estado',render:r=><Badge text={r.active?'Ativa':'Inativa'} color={r.active?'green':'gray'}/>},
   ];
   return (
     <>
-      <CrudPage title="Cores" icon="ð¨" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
+      <CrudPage title="Cores" icon="🎨" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
       <ColorForm open={modal==='form'} onClose={()=>{setModal(null);setEditing(null);}} onSave={save} editing={editing}/>
     </>
   );
@@ -1468,7 +1468,7 @@ function ColorForm({open,onClose,onSave,editing}) {
   return (
     <Modal open={open} onClose={onClose} title={editing?'Editar Cor':'Nova Cor'} size="sm">
       <div className="space-y-4">
-        <Input label="CÃ³digo" required value={form.code} onChange={e=>set('code',e.target.value)} placeholder="ex: VD"/>
+        <Input label="Código" required value={form.code} onChange={e=>set('code',e.target.value)} placeholder="ex: VD"/>
         <Input label="Nome" required value={form.name} onChange={e=>set('name',e.target.value)} placeholder="ex: Verde"/>
         <Field label="Cor">
           <div className="flex items-center gap-3">
@@ -1480,14 +1480,14 @@ function ColorForm({open,onClose,onSave,editing}) {
         {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading||!form.code||!form.name}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading||!form.code||!form.name}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
   );
 }
 
-// âââ OPERATORS PAGE âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── OPERATORS PAGE ───────────────────────────────────────────────────────────
 function OperatorsPage() {
   const [data,setData] = useState([]);
   const [loading,setLoading] = useState(true);
@@ -1497,15 +1497,15 @@ function OperatorsPage() {
   useEffect(()=>{ load(); },[]);
   const save = async(form)=>{ if(editing) await api.put(`/api/operators/${editing.id}`,form); else await api.post('/api/operators',form); await load(); setModal(null); setEditing(null); };
   const cols = [
-    {key:'number',label:'NÂº',cls:()=>'font-mono font-bold'},
+    {key:'number',label:'Nº',cls:()=>'font-mono font-bold'},
     {key:'name',label:'Nome'},
     {key:'role',label:'Papel',render:r=><Badge text={r.role==='quality'?'Qualidade':'Operador'} color={r.role==='quality'?'purple':'blue'}/>},
-    {key:'created_at',label:'Criado em',render:r=>r.created_at?.slice(0,10)||'â'},
+    {key:'created_at',label:'Criado em',render:r=>r.created_at?.slice(0,10)||'—'},
     {key:'active',label:'Estado',render:r=><Badge text={r.active?'Ativo':'Inativo'} color={r.active?'green':'gray'}/>},
   ];
   return (
     <>
-      <CrudPage title="Operadores" icon="ð·" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
+      <CrudPage title="Operadores" icon="👷" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
       <OperatorForm open={modal==='form'} onClose={()=>{setModal(null);setEditing(null);}} onSave={save} editing={editing}/>
     </>
   );
@@ -1521,21 +1521,21 @@ function OperatorForm({open,onClose,onSave,editing}) {
     <Modal open={open} onClose={onClose} title={editing?'Editar Operador':'Novo Operador'} size="sm">
       <div className="space-y-4">
         <Input label="Nome" required value={form.name} onChange={e=>set('name',e.target.value)}/>
-        <Input label="NÂº Operador" required value={form.number} onChange={e=>set('number',e.target.value)} placeholder="ex: 001" inputMode="numeric"/>
-        <Input label={editing?"Novo PIN (deixar vazio para nÃ£o alterar)":"PIN (4 dÃ­gitos)"} required={!editing} type="password" value={form.pin} onChange={e=>set('pin',e.target.value)} maxLength={4} inputMode="numeric" placeholder="4 dÃ­gitos"/>
-        <Select label="Papel" value={form.role} onChange={e=>set('role',e.target.value)} options={[{value:'operator',label:'Operador'},{value:'quality',label:'ResponsÃ¡vel de Qualidade'}]}/>
+        <Input label="Nº Operador" required value={form.number} onChange={e=>set('number',e.target.value)} placeholder="ex: 001" inputMode="numeric"/>
+        <Input label={editing?"Novo PIN (deixar vazio para não alterar)":"PIN (4 dígitos)"} required={!editing} type="password" value={form.pin} onChange={e=>set('pin',e.target.value)} maxLength={4} inputMode="numeric" placeholder="4 dígitos"/>
+        <Select label="Papel" value={form.role} onChange={e=>set('role',e.target.value)} options={[{value:'operator',label:'Operador'},{value:'quality',label:'Responsável de Qualidade'}]}/>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativo'},{value:0,label:'Inativo'}]}/>}
         {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading||!form.name||!form.number||(!editing&&!form.pin)}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading||!form.name||!form.number||(!editing&&!form.pin)}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
   );
 }
 
-// âââ MACHINES PAGE ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── MACHINES PAGE ────────────────────────────────────────────────────────────
 function MachinesPage() {
   const [data,setData] = useState([]);
   const [loading,setLoading] = useState(true);
@@ -1546,13 +1546,13 @@ function MachinesPage() {
   const save = async(form)=>{ if(editing) await api.put(`/api/machines/${editing.id}`,form); else await api.post('/api/machines',form); await load(); setModal(null); setEditing(null); };
   const cols = [
     {key:'name',label:'Nome',cls:()=>'font-bold'},
-    {key:'type',label:'Tipo',render:r=><Badge text={r.type==='extrusao'?'ExtrusÃ£o':'InjeÃ§Ã£o'} color={r.type==='extrusao'?'blue':'orange'}/>},
-    {key:'has_weighing',label:'Pesagem',render:r=><Badge text={r.has_weighing?'Sim':'NÃ£o'} color={r.has_weighing?'green':'gray'}/>},
+    {key:'type',label:'Tipo',render:r=><Badge text={r.type==='extrusao'?'Extrusão':'Injeção'} color={r.type==='extrusao'?'blue':'orange'}/>},
+    {key:'has_weighing',label:'Pesagem',render:r=><Badge text={r.has_weighing?'Sim':'Não'} color={r.has_weighing?'green':'gray'}/>},
     {key:'active',label:'Estado',render:r=><Badge text={r.active?'Ativa':'Inativa'} color={r.active?'green':'gray'}/>},
   ];
   return (
     <>
-      <CrudPage title="MÃ¡quinas" icon="ð­" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
+      <CrudPage title="Máquinas" icon="🏭" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
       <MachineForm open={modal==='form'} onClose={()=>{setModal(null);setEditing(null);}} onSave={save} editing={editing}/>
     </>
   );
@@ -1566,27 +1566,27 @@ function MachineForm({open,onClose,onSave,editing}) {
   const [formErr,setFormErr] = useState('');
   const submit=async()=>{ setFormErr(''); setLoading(true); try{await onSave({...form,has_weighing:form.has_weighing?1:0,active:form.active?1:0});}catch(e){setFormErr(e.message);}finally{setLoading(false);} };
   return (
-    <Modal open={open} onClose={onClose} title={editing?'Editar MÃ¡quina':'Nova MÃ¡quina'} size="sm">
+    <Modal open={open} onClose={onClose} title={editing?'Editar Máquina':'Nova Máquina'} size="sm">
       <div className="space-y-4">
-        <Input label="Nome" required value={form.name} onChange={e=>set('name',e.target.value)} placeholder="ex: ExtrusÃ£o 4"/>
-        <Select label="Tipo" value={form.type} onChange={e=>set('type',e.target.value)} options={[{value:'extrusao',label:'ExtrusÃ£o'},{value:'injecao',label:'InjeÃ§Ã£o'}]}/>
+        <Input label="Nome" required value={form.name} onChange={e=>set('name',e.target.value)} placeholder="ex: Extrusão 4"/>
+        <Select label="Tipo" value={form.type} onChange={e=>set('type',e.target.value)} options={[{value:'extrusao',label:'Extrusão'},{value:'injecao',label:'Injeção'}]}/>
         <div className="flex items-center gap-3">
           <input type="checkbox" id="hw" checked={!!form.has_weighing} onChange={e=>set('has_weighing',e.target.checked?1:0)} className="w-4 h-4 rounded"/>
-          <label htmlFor="hw" className="text-sm font-medium text-gray-700">Tem mÃ³dulo de pesagem</label>
+          <label htmlFor="hw" className="text-sm font-medium text-gray-700">Tem módulo de pesagem</label>
         </div>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativa'},{value:0,label:'Inativa'}]}/>}
         <Textarea label="Notas" value={form.notes||''} onChange={e=>set('notes',e.target.value)}/>
         {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading||!form.name}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading||!form.name}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
   );
 }
 
-// âââ STOPPAGE CODES PAGE ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── STOPPAGE CODES PAGE ──────────────────────────────────────────────────────
 function StopCodesPage() {
   const [data,setData] = useState([]);
   const [loading,setLoading] = useState(true);
@@ -1596,14 +1596,14 @@ function StopCodesPage() {
   useEffect(()=>{ load(); },[]);
   const save = async(form)=>{ if(editing) await api.put(`/api/stoppage-codes/${editing.id}`,form); else await api.post('/api/stoppage-codes',form); await load(); setModal(null); setEditing(null); };
   const cols = [
-    {key:'code',label:'CÃ³digo',cls:()=>'font-mono font-bold'},
-    {key:'description',label:'DescriÃ§Ã£o'},
+    {key:'code',label:'Código',cls:()=>'font-mono font-bold'},
+    {key:'description',label:'Descrição'},
     {key:'category',label:'Categoria'},
     {key:'active',label:'Estado',render:r=><Badge text={r.active?'Ativo':'Inativo'} color={r.active?'green':'gray'}/>},
   ];
   return (
     <>
-      <CrudPage title="CÃ³digos de Paragem" icon="â" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
+      <CrudPage title="Códigos de Paragem" icon="⛔" cols={cols} data={data} loading={loading} onAdd={()=>{setEditing(null);setModal('form');}} onEdit={r=>{setEditing(r);setModal('form');}}/>
       <StopCodeForm open={modal==='form'} onClose={()=>{setModal(null);setEditing(null);}} onSave={save} editing={editing}/>
     </>
   );
@@ -1616,25 +1616,25 @@ function StopCodeForm({open,onClose,onSave,editing}) {
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=async()=>{ setLoading(true); try{await onSave({...form,active:form.active?1:0});}finally{setLoading(false);} };
   return (
-    <Modal open={open} onClose={onClose} title={editing?'Editar CÃ³digo':'Novo CÃ³digo de Paragem'} size="sm">
+    <Modal open={open} onClose={onClose} title={editing?'Editar Código':'Novo Código de Paragem'} size="sm">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="CÃ³digo" required value={form.code} onChange={e=>set('code',e.target.value)} placeholder="ex: 12"/>
+          <Input label="Código" required value={form.code} onChange={e=>set('code',e.target.value)} placeholder="ex: 12"/>
           <Input label="Categoria" value={form.category} onChange={e=>set('category',e.target.value)} placeholder="ex: Avaria"/>
         </div>
-        <Input label="DescriÃ§Ã£o" required value={form.description} onChange={e=>set('description',e.target.value)} placeholder="ex: Avaria hidrÃ¡ulica"/>
+        <Input label="Descrição" required value={form.description} onChange={e=>set('description',e.target.value)} placeholder="ex: Avaria hidráulica"/>
         {editing&&<Select label="Estado" value={form.active} onChange={e=>set('active',Number(e.target.value))} options={[{value:1,label:'Ativo'},{value:0,label:'Inativo'}]}/>}
         {formErr&&<div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{formErr}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t">
           <Btn variant="outline" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={loading||!form.code||!form.description}>{loading?'A guardarâ¦':'Guardar'}</Btn>
+          <Btn onClick={submit} disabled={loading||!form.code||!form.description}>{loading?'A guardar…':'Guardar'}</Btn>
         </div>
       </div>
     </Modal>
   );
 }
 
-// âââ HELPER: CÃDIGO DE PALETE âââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── HELPER: CÓDIGO DE PALETE ─────────────────────────────────────────────────
 function buildPalletCode(entry, shift) {
   const d = entry && entry.created_at ? new Date(entry.created_at) : new Date();
   const dd = String(d.getDate()).padStart(2,'0');
@@ -1653,29 +1653,29 @@ function PalletCodeModalV2({open,onClose,entry,shift}) {
   const mm = String(d.getMonth()+1).padStart(2,'0');
   const yy = String(d.getFullYear()).slice(2);
   return (
-    <Modal open={open} onClose={onClose} title="CÃ³digo de Palete" size="sm">
+    <Modal open={open} onClose={onClose} title="Código de Palete" size="sm">
       <div className="text-center py-2">
         <div className="bg-gray-900 text-green-400 rounded-xl p-6 font-mono mb-4">
-          <div className="text-xs text-gray-500 mb-2 uppercase tracking-widest">CÃ³digo de Palete</div>
+          <div className="text-xs text-gray-500 mb-2 uppercase tracking-widest">Código de Palete</div>
           <div className="text-3xl font-extrabold tracking-widest">{code}</div>
         </div>
         <div className="text-left bg-gray-50 rounded-xl p-4 text-sm space-y-1.5 mb-4">
-          <div className="flex justify-between"><span className="text-gray-500">Produto:</span><span className="font-semibold">{shift.ref_name||shift.ref_code||'â'}</span></div>
-          <div className="flex justify-between"><span className="text-gray-500">Ref.:</span><span className="font-mono text-xs">{shift.ref_code||'â'}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Produto:</span><span className="font-semibold">{shift.ref_name||shift.ref_code||'—'}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Ref.:</span><span className="font-mono text-xs">{shift.ref_code||'—'}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Data:</span><span>{dd}/{mm}/{yy}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Turno:</span><span>{SHIFTS[shift.shift_number]}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Operador:</span><span>{shift.operator_name} (#{shift.operator_number})</span></div>
-          {entry.pieces_ok>0&&<div className="flex justify-between"><span className="text-gray-500">PeÃ§as OK:</span><span className="font-bold text-green-700">{entry.pieces_ok}</span></div>}
-          {entry.meters_pieces>0&&<div className="flex justify-between"><span className="text-gray-500">Metros/PeÃ§as:</span><span className="font-bold">{entry.meters_pieces}</span></div>}
+          {entry.pieces_ok>0&&<div className="flex justify-between"><span className="text-gray-500">Peças OK:</span><span className="font-bold text-green-700">{entry.pieces_ok}</span></div>}
+          {entry.meters_pieces>0&&<div className="flex justify-between"><span className="text-gray-500">Metros/Peças:</span><span className="font-bold">{entry.meters_pieces}</span></div>}
         </div>
-        <p className="text-xs text-gray-400 mb-4">Escreva este cÃ³digo na etiqueta da palete</p>
+        <p className="text-xs text-gray-400 mb-4">Escreva este código na etiqueta da palete</p>
         <Btn className="w-full" onClick={onClose}>Fechar</Btn>
       </div>
     </Modal>
   );
 }
 
-// âââ QUALITY PAGE âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── QUALITY PAGE ─────────────────────────────────────────────────────────────
 function QualityPage() {
   const {logout} = useAuth();
   const [tab,setTab] = useState('validation'); // 'validation' | 'report'
@@ -1780,10 +1780,10 @@ function QualityPage() {
       <div className="bg-purple-700 text-white px-4 py-3">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="font-bold text-lg">ð Controlo de Qualidade</h1>
+            <h1 className="font-bold text-lg">🔍 Controlo de Qualidade</h1>
             <div className="flex gap-1 mt-2">
-              <button onClick={()=>setTab('validation')} className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${tab==='validation'?'bg-white text-purple-700':'text-purple-200 hover:bg-purple-600'}`}>â ValidaÃ§Ã£o</button>
-              <button onClick={()=>setTab('report')} className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${tab==='report'?'bg-white text-purple-700':'text-purple-200 hover:bg-purple-600'}`}>ð RelatÃ³rio do Dia</button>
+              <button onClick={()=>setTab('validation')} className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${tab==='validation'?'bg-white text-purple-700':'text-purple-200 hover:bg-purple-600'}`}>✅ Validação</button>
+              <button onClick={()=>setTab('report')} className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${tab==='report'?'bg-white text-purple-700':'text-purple-200 hover:bg-purple-600'}`}>📋 Relatório do Dia</button>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -1800,11 +1800,11 @@ function QualityPage() {
         {tab==='report'&&(
           <div>
             {reportLoading?<div className="flex justify-center py-20"><Spinner/></div>:
-             report.length===0?<EmptyState icon="ð" title="Sem registos validados nesta data" desc="Valide registos no separador ValidaÃ§Ã£o"/>:(
+             report.length===0?<EmptyState icon="📋" title="Sem registos validados nesta data" desc="Valide registos no separador Validação"/>:(
               <div>
                 <div className="flex justify-between items-center mb-4">
-                  <div className="font-bold text-gray-900">RelatÃ³rio validado â {date}</div>
-                  <button onClick={()=>window.print()} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 print:hidden">ð¨ï¸ Imprimir</button>
+                  <div className="font-bold text-gray-900">Relatório validado — {date}</div>
+                  <button onClick={()=>window.print()} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 print:hidden">🖨️ Imprimir</button>
                 </div>
                 {/* Group by machine */}
                 {(()=>{
@@ -1813,7 +1813,7 @@ function QualityPage() {
                   return Object.values(byMachine).map(grp=>(
                     <div key={grp.machine_name} className="bg-white rounded-xl shadow-sm overflow-hidden mb-4">
                       <div className={`px-4 py-3 border-b font-bold flex items-center gap-2 ${grp.machine_type==='extrusao'?'bg-blue-50':'bg-orange-50'}`}>
-                        <span>{grp.machine_type==='extrusao'?'ð­':'âï¸'}</span>
+                        <span>{grp.machine_type==='extrusao'?'🏭':'⚙️'}</span>
                         <span>{grp.machine_name}</span>
                         <span className="text-xs font-normal text-gray-500 ml-2">{grp.entries.length} registo(s) validado(s)</span>
                       </div>
@@ -1822,18 +1822,18 @@ function QualityPage() {
                           <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                             <tr>
                               <th className="px-3 py-2 text-left">T.</th>
-                              <th className="px-3 py-2 text-left">ReferÃªncia</th>
+                              <th className="px-3 py-2 text-left">Referência</th>
                               <th className="px-3 py-2 text-left">Cor</th>
                               <th className="px-3 py-2 text-left">Operador</th>
                               {grp.machine_type==='extrusao'?<>
                                 <th className="px-3 py-2 text-right">Rolos</th>
                                 <th className="px-3 py-2 text-right">Metros</th>
                               </>:<>
-                                <th className="px-3 py-2 text-right">PeÃ§as OK</th>
+                                <th className="px-3 py-2 text-right">Peças OK</th>
                                 <th className="px-3 py-2 text-right">Contador</th>
                               </>}
                               <th className="px-3 py-2 text-right">Rej.</th>
-                              <th className="px-3 py-2 text-right">InÇsio</th>
+                              <th className="px-3 py-2 text-right">Início</th>
                               <th className="px-3 py-2 text-right">Fim</th>
                             </tr>
                           </thead>
@@ -1841,19 +1841,19 @@ function QualityPage() {
                             {grp.entries.map(e=>(
                               <tr key={e.id} className="border-t">
                                 <td className="px-3 py-2 text-center text-xs font-bold text-gray-500">T{e.shift_number}</td>
-                                <td className="px-3 py-2"><div className="font-semibold text-gray-900">{e.ref_name||'â'}</div><div className="text-xs text-gray-400 font-mono">{e.ref_code||''}</div></td>
-                                <td className="px-3 py-2 text-sm">{e.color_name||e.color||'â'}</td>
+                                <td className="px-3 py-2"><div className="font-semibold text-gray-900">{e.ref_name||'—'}</div><div className="text-xs text-gray-400 font-mono">{e.ref_code||''}</div></td>
+                                <td className="px-3 py-2 text-sm">{e.color_name||e.color||'—'}</td>
                                 <td className="px-3 py-2 text-xs text-gray-600">{e.operator_name} <span className="text-gray-400">#{e.operator_number}</span></td>
                                 {grp.machine_type==='extrusao'?<>
                                   <td className="px-3 py-2 text-right font-medium">{e.rolls_bundles||0}</td>
                                   <td className="px-3 py-2 text-right font-bold text-blue-700">{e.meters_pieces||0}</td>
                                 </>:<>
                                   <td className="px-3 py-2 text-right font-bold text-green-700">{e.pieces_ok||0}</td>
-                                  <td className="px-3 py-2 text-right">{e.counter||'â'}</td>
+                                  <td className="px-3 py-2 text-right">{e.counter||'—'}</td>
                                 </>}
                                 <td className="px-3 py-2 text-right text-red-500">{e.rejected||e.pieces_rejected||0}</td>
-                                <td className="px-3 py-2 text-right text-xs text-gray-400">{e.start_time||'â'}</td>
-                                <td className="px-3 py-2 text-right text-xs text-gray-400">{e.end_time||'â'}</td>
+                                <td className="px-3 py-2 text-right text-xs text-gray-400">{e.start_time||'—'}</td>
+                                <td className="px-3 py-2 text-right text-xs text-gray-400">{e.end_time||'—'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1876,14 +1876,14 @@ function QualityPage() {
                     </div>
                   ));
                 })()}
-                <div className="text-center text-xs text-gray-400 mt-4 print:hidden">Biblioteca: selecione outra data para consultar relatÃ³rios anteriores</div>
+                <div className="text-center text-xs text-gray-400 mt-4 print:hidden">Biblioteca: selecione outra data para consultar relatórios anteriores</div>
               </div>
             )}
           </div>
         )}
 
         {tab==='validation'&&(loading?<div className="flex justify-center py-20"><Spinner/></div>:
-         shifts.length===0?<EmptyState icon="ð" title="Sem turnos nesta data" desc="Selecione outra data ou aguarde registos"/>:(
+         shifts.length===0?<EmptyState icon="📅" title="Sem turnos nesta data" desc="Selecione outra data ou aguarde registos"/>:(
           shifts.map(shift=>(
             <div key={shift.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
               <div className={`px-4 py-3 border-b flex items-center justify-between ${isExtrusao(shift)?'bg-blue-50':'bg-orange-50'}`}>
@@ -1896,11 +1896,11 @@ function QualityPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge text={STATUS_LABELS[shift.status]} color={shift.status==='open'?'green':'gray'}/>
-                  <span className="text-xs text-gray-400">{shift.start_time||'?'}â{shift.end_time||'â¦'}</span>
+                  <span className="text-xs text-gray-400">{shift.start_time||'?'}–{shift.end_time||'…'}</span>
                 </div>
               </div>
               {shift.entries.length===0?(
-                <div className="px-4 py-6 text-center text-gray-400 text-sm">Sem registos de produÃ§Ã£o neste turno</div>
+                <div className="px-4 py-6 text-center text-gray-400 text-sm">Sem registos de produção neste turno</div>
               ):(
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -1913,10 +1913,10 @@ function QualityPage() {
                         </>:<>
                           <th className="px-3 py-2 text-right">Cavs.</th>
                           <th className="px-3 py-2 text-right">Contador</th>
-                          <th className="px-3 py-2 text-right">PeÃ§as OK</th>
+                          <th className="px-3 py-2 text-right">Peças OK</th>
                         </>}
                         <th className="px-3 py-2 text-right">Rej.</th>
-                        <th className="px-3 py-2 text-right">InÃ­cio</th>
+                        <th className="px-3 py-2 text-right">Início</th>
                         <th className="px-3 py-2 text-right">Fim</th>
                         <th className="px-3 py-2 text-center">Valid.</th>
                         <th className="px-3 py-2"/>
@@ -1926,34 +1926,34 @@ function QualityPage() {
                       {shift.entries.map(e=>(
                         <tr key={e.id} className={`border-t table-row ${e.validated?'bg-green-50':''}`}>
                           {isExtrusao(shift)?<>
-                            <td className="px-3 py-2">{e.color||'â'}</td>
+                            <td className="px-3 py-2">{e.color||'—'}</td>
                             <td className="px-3 py-2 text-right">{e.rolls_bundles||0}</td>
                             <td className="px-3 py-2 text-right">{e.meters_pieces||0}</td>
                           </>:<>
-                            <td className="px-3 py-2 text-right">{e.active_cavities||'â'}</td>
-                            <td className="px-3 py-2 text-right">{e.counter||'â'}</td>
+                            <td className="px-3 py-2 text-right">{e.active_cavities||'—'}</td>
+                            <td className="px-3 py-2 text-right">{e.counter||'—'}</td>
                             <td className="px-3 py-2 text-right font-medium text-green-700">{e.pieces_ok||0}</td>
                           </>}
                           <td className="px-3 py-2 text-right text-red-500">{e.rejected||e.pieces_rejected||0}</td>
-                          <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.start_time||'â'}</td>
-                          <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.end_time||'â'}</td>
+                          <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.start_time||'—'}</td>
+                          <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.end_time||'—'}</td>
                           <td className="px-3 py-2 text-center">
                             {e.validated?(
                               <span className="flex items-center gap-1 justify-center">
-                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-500 text-white">â OK</span>
-                                <button onClick={()=>toggleValidate(e)} className="text-gray-300 hover:text-red-400 text-xs" title="Remover validaÃ§Ã£o">â©</button>
+                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-500 text-white">✓ OK</span>
+                                <button onClick={()=>toggleValidate(e)} className="text-gray-300 hover:text-red-400 text-xs" title="Remover validação">↩</button>
                               </span>
                             ):(
                               <span className="flex items-center gap-1 justify-center">
-                                <button onClick={()=>toggleValidate(e)} className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700 transition-colors">â Validar</button>
-                                <button onClick={()=>openCorrection(e,shift)} className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-500 hover:bg-red-100 transition-colors" title="Corrigir e validar">â</button>
+                                <button onClick={()=>toggleValidate(e)} className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700 transition-colors">✓ Validar</button>
+                                <button onClick={()=>openCorrection(e,shift)} className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-500 hover:bg-red-100 transition-colors" title="Corrigir e validar">✗</button>
                               </span>
                             )}
                           </td>
                           <td className="px-3 py-2 text-right">
                             <div className="flex items-center gap-1 justify-end">
-                              <button onClick={()=>setPalletData({entry:e,shift})} className="text-purple-500 hover:text-purple-700 text-xs" title="Ver cÃ³digo de palete">ð·ï¸</button>
-                              <button onClick={()=>startEdit(e,shift)} className="text-blue-500 hover:text-blue-700 text-xs" title="Editar">âï¸</button>
+                              <button onClick={()=>setPalletData({entry:e,shift})} className="text-purple-500 hover:text-purple-700 text-xs" title="Ver código de palete">🏷️</button>
+                              <button onClick={()=>startEdit(e,shift)} className="text-blue-500 hover:text-blue-700 text-xs" title="Editar">✏️</button>
                             </div>
                           </td>
                         </tr>
@@ -1974,7 +1974,7 @@ function QualityPage() {
             {isExtrusao(editing.shift)?<>
               <div className="grid grid-cols-2 gap-3">
                 <Input label="Rolos/Atados" type="number" min="0" value={editForm.rolls_bundles} onChange={e=>setEditForm(f=>({...f,rolls_bundles:e.target.value}))}/>
-                <Input label="Metros/PeÃ§as" type="number" min="0" step="0.1" value={editForm.meters_pieces} onChange={e=>setEditForm(f=>({...f,meters_pieces:e.target.value}))}/>
+                <Input label="Metros/Peças" type="number" min="0" step="0.1" value={editForm.meters_pieces} onChange={e=>setEditForm(f=>({...f,meters_pieces:e.target.value}))}/>
               </div>
               <Input label="Rejeitados" type="number" min="0" value={editForm.rejected} onChange={e=>setEditForm(f=>({...f,rejected:e.target.value}))}/>
             </>:<>
@@ -1983,18 +1983,18 @@ function QualityPage() {
                 <Input label="Contador" type="number" min="0" value={editForm.counter} onChange={e=>setEditForm(f=>({...f,counter:e.target.value}))}/>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Input label="PeÃ§as OK" type="number" min="0" value={editForm.pieces_ok} onChange={e=>setEditForm(f=>({...f,pieces_ok:e.target.value}))}/>
-                <Input label="PeÃ§as Rejeitadas" type="number" min="0" value={editForm.pieces_rejected} onChange={e=>setEditForm(f=>({...f,pieces_rejected:e.target.value}))}/>
+                <Input label="Peças OK" type="number" min="0" value={editForm.pieces_ok} onChange={e=>setEditForm(f=>({...f,pieces_ok:e.target.value}))}/>
+                <Input label="Peças Rejeitadas" type="number" min="0" value={editForm.pieces_rejected} onChange={e=>setEditForm(f=>({...f,pieces_rejected:e.target.value}))}/>
               </div>
             </>}
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Hora InÃ­cio" type="time" value={editForm.start_time} onChange={e=>setEditForm(f=>({...f,start_time:e.target.value}))}/>
+              <Input label="Hora Início" type="time" value={editForm.start_time} onChange={e=>setEditForm(f=>({...f,start_time:e.target.value}))}/>
               <Input label="Hora Fim" type="time" value={editForm.end_time} onChange={e=>setEditForm(f=>({...f,end_time:e.target.value}))}/>
             </div>
-            <Input label="ObservaÃ§Ãµes" value={editForm.notes} onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))}/>
+            <Input label="Observações" value={editForm.notes} onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))}/>
             <div className="flex gap-3 justify-end pt-2 border-t">
               <Btn variant="outline" onClick={()=>setEditing(null)}>Cancelar</Btn>
-              <Btn onClick={saveEdit} disabled={saving}>{saving?'A guardarâ¦':'Guardar'}</Btn>
+              <Btn onClick={saveEdit} disabled={saving}>{saving?'A guardar…':'Guardar'}</Btn>
             </div>
           </div>
         </Modal>
@@ -2002,69 +2002,69 @@ function QualityPage() {
 
       {/* Correction panel */}
       {correcting&&(
-        <Modal open={!!correcting} onClose={()=>setCorrecting(null)} title="â Corrigir Registo" size="lg">
+        <Modal open={!!correcting} onClose={()=>setCorrecting(null)} title="✗ Corrigir Registo" size="lg">
           <div className="space-y-4">
             {/* Side-by-side: original vs correction */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                <div className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">ð O que o operador inseriu</div>
+                <div className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">📋 O que o operador inseriu</div>
                 {correcting.isExt?(
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between"><span className="text-gray-500">Rolos/Atados:</span><span className="font-bold">{correcting.entry.rolls_bundles||0}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Metros/PeÃ§as:</span><span className="font-bold">{correcting.entry.meters_pieces||0}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Metros/Peças:</span><span className="font-bold">{correcting.entry.meters_pieces||0}</span></div>
                     <div className="flex justify-between"><span className="text-gray-500">Rejeitados:</span><span className="font-bold text-red-600">{correcting.entry.rejected||0}</span></div>
                   </div>
                 ):(
                   <div className="space-y-1 text-sm">
-                    <div className="flex justify-between"><span className="text-gray-500">PeÃ§as OK:</span><span className="font-bold text-green-700">{correcting.entry.pieces_ok||0}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Contador:</span><span className="font-bold">{correcting.entry.counter||'â'}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Cav. Ativas:</span><span className="font-bold">{correcting.entry.active_cavities||'â'}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">PeÃ§as Rej.:</span><span className="font-bold text-red-600">{correcting.entry.pieces_rejected||0}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Peças OK:</span><span className="font-bold text-green-700">{correcting.entry.pieces_ok||0}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Contador:</span><span className="font-bold">{correcting.entry.counter||'—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Cav. Ativas:</span><span className="font-bold">{correcting.entry.active_cavities||'—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Peças Rej.:</span><span className="font-bold text-red-600">{correcting.entry.pieces_rejected||0}</span></div>
                   </div>
                 )}
                 <div className="mt-2 pt-2 border-t border-amber-200 space-y-1 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-500">InÃ­cio:</span><span>{correcting.entry.start_time||'â'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Fim:</span><span>{correcting.entry.end_time||'â'}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Início:</span><span>{correcting.entry.start_time||'—'}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Fim:</span><span>{correcting.entry.end_time||'—'}</span></div>
                 </div>
-                <div className="mt-2 text-xs text-amber-600">Operador: {correcting.shift.operator_name} â {correcting.shift.date}</div>
+                <div className="mt-2 text-xs text-amber-600">Operador: {correcting.shift.operator_name} — {correcting.shift.date}</div>
               </div>
               <div>
-                <div className="text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">âï¸ Valores corrigidos</div>
+                <div className="text-xs font-bold text-blue-700 uppercase tracking-widest mb-2">✏️ Valores corrigidos</div>
                 {correcting.isExt?(
                   <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                       <Input label="Rolos/Atados" type="number" min="0" value={corrForm.rolls_bundles} onChange={e=>setCorrForm(f=>({...f,rolls_bundles:e.target.value}))}/>
-                      <Input label="Metros/PeÃ§as" type="number" min="0" step="0.1" value={corrForm.meters_pieces} onChange={e=>setCorrForm(f=>({...f,meters_pieces:e.target.value}))}/>
+                      <Input label="Metros/Peças" type="number" min="0" step="0.1" value={corrForm.meters_pieces} onChange={e=>setCorrForm(f=>({...f,meters_pieces:e.target.value}))}/>
                     </div>
                     <Input label="Rejeitados" type="number" min="0" value={corrForm.rejected} onChange={e=>setCorrForm(f=>({...f,rejected:e.target.value}))}/>
                   </div>
                 ):(
                   <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">
-                      <Input label="PeÃ§as OK" type="number" min="0" value={corrForm.pieces_ok} onChange={e=>setCorrForm(f=>({...f,pieces_ok:e.target.value}))}/>
+                      <Input label="Peças OK" type="number" min="0" value={corrForm.pieces_ok} onChange={e=>setCorrForm(f=>({...f,pieces_ok:e.target.value}))}/>
                       <Input label="Contador" type="number" min="0" value={corrForm.counter} onChange={e=>setCorrForm(f=>({...f,counter:e.target.value}))}/>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <Input label="Cav. Ativas" type="number" min="0" value={corrForm.active_cavities} onChange={e=>setCorrForm(f=>({...f,active_cavities:e.target.value}))}/>
-                      <Input label="PeÃ§as Rej." type="number" min="0" value={corrForm.pieces_rejected} onChange={e=>setCorrForm(f=>({...f,pieces_rejected:e.target.value}))}/>
+                      <Input label="Peças Rej." type="number" min="0" value={corrForm.pieces_rejected} onChange={e=>setCorrForm(f=>({...f,pieces_rejected:e.target.value}))}/>
                     </div>
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2 mt-2">
-                  <Input label="Hora InÃ­cio" type="time" value={corrForm.start_time} onChange={e=>setCorrForm(f=>({...f,start_time:e.target.value}))}/>
+                  <Input label="Hora Início" type="time" value={corrForm.start_time} onChange={e=>setCorrForm(f=>({...f,start_time:e.target.value}))}/>
                   <Input label="Hora Fim" type="time" value={corrForm.end_time} onChange={e=>setCorrForm(f=>({...f,end_time:e.target.value}))}/>
                 </div>
               </div>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Motivo da correÃ§Ã£o</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Motivo da correção</label>
               <textarea value={corrNotes} onChange={e=>setCorrNotes(e.target.value)} rows={2}
                 className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-purple-400"
-                placeholder="Descreva o motivo da correÃ§Ã£oâ¦"/>
+                placeholder="Descreva o motivo da correção…"/>
             </div>
             <div className="flex gap-3 justify-end pt-2 border-t">
               <Btn variant="outline" onClick={()=>setCorrecting(null)}>Cancelar</Btn>
-              <Btn onClick={saveCorrection} disabled={corrSaving} variant="primary">{corrSaving?'A guardarâ¦':'Guardar CorreÃ§Ã£o e Validar â'}</Btn>
+              <Btn onClick={saveCorrection} disabled={corrSaving} variant="primary">{corrSaving?'A guardar…':'Guardar Correção e Validar ✓'}</Btn>
             </div>
           </div>
         </Modal>
@@ -2076,7 +2076,7 @@ function QualityPage() {
   );
 }
 
-// âââ REPORTS PAGE âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── REPORTS PAGE ─────────────────────────────────────────────────────────────
 function ReportsPage() {
   const [rows,setRows] = useState([]);
   const [loading,setLoading] = useState(false);
@@ -2156,20 +2156,20 @@ function ReportsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">ð RelatÃ³rios</h1>
+      <h1 className="text-2xl font-bold text-gray-900">📈 Relatórios</h1>
 
       {/* Filtros */}
       <div className="bg-white rounded-xl shadow-sm p-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Input label="Data InÃ­cio" type="date" value={filters.date_from} onChange={e=>setF('date_from',e.target.value)}/>
+          <Input label="Data Início" type="date" value={filters.date_from} onChange={e=>setF('date_from',e.target.value)}/>
           <Input label="Data Fim" type="date" value={filters.date_to} onChange={e=>setF('date_to',e.target.value)}/>
-          <Field label="MÃ¡quina">
+          <Field label="Máquina">
             <select value={filters.machine_id} onChange={e=>setF('machine_id',e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-              <option value="">Todas as mÃ¡quinas</option>
+              <option value="">Todas as máquinas</option>
               {machines.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </Field>
-          <Field label="Produto / ReferÃªncia">
+          <Field label="Produto / Referência">
             <select value={filters.reference_id} onChange={e=>setF('reference_id',e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
               <option value="">Todos os produtos</option>
               {refs.map(r=><option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
@@ -2177,7 +2177,7 @@ function ReportsPage() {
           </Field>
         </div>
         <div className="flex justify-end mt-3">
-          <Btn onClick={load} disabled={loading}>{loading?'A carregarâ¦':'Aplicar Filtros'}</Btn>
+          <Btn onClick={load} disabled={loading}>{loading?'A carregar…':'Aplicar Filtros'}</Btn>
         </div>
       </div>
 
@@ -2187,8 +2187,8 @@ function ReportsPage() {
       {rows.length>0&&(
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiCard label="Turnos" value={rows.length} color="blue"/>
-          <KpiCard label="Metros/PeÃ§as ext." value={totalMeters.toFixed(0)} color="blue"/>
-          <KpiCard label="PeÃ§as inj. OK" value={totalPieces} color="green"/>
+          <KpiCard label="Metros/Peças ext." value={totalMeters.toFixed(0)} color="blue"/>
+          <KpiCard label="Peças inj. OK" value={totalPieces} color="green"/>
           <KpiCard label="Total paragens" value={`${totalStop} min`} color="amber"/>
         </div>
       )}
@@ -2196,18 +2196,18 @@ function ReportsPage() {
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {loading?<div className="flex justify-center py-12"><Spinner/></div>:
-         rows.length===0?<EmptyState icon="ð" title="Sem dados" desc="Ajuste os filtros e clique em Aplicar"/>:(
+         rows.length===0?<EmptyState icon="📊" title="Sem dados" desc="Ajuste os filtros e clique em Aplicar"/>:(
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
                   <th className="px-3 py-2.5 text-left">Data</th>
                   <th className="px-3 py-2.5 text-center">Turno</th>
-                  <th className="px-3 py-2.5 text-left">MÃ¡quina</th>
+                  <th className="px-3 py-2.5 text-left">Máquina</th>
                   <th className="px-3 py-2.5 text-left">Produto</th>
                   <th className="px-3 py-2.5 text-left">Operador</th>
-                  <th className="px-3 py-2.5 text-right">Metros/PeÃ§as</th>
-     0            <th className="px-3 py-2.5 text-right">PeÃ§as OK</th>
+                  <th className="px-3 py-2.5 text-right">Metros/Peças</th>
+                  <th className="px-3 py-2.5 text-right">Peças OK</th>
                   <th className="px-3 py-2.5 text-right">Rej.</th>
                   <th className="px-3 py-2.5 text-right">Paragens</th>
                   <th className="px-3 py-2.5"/>
@@ -2219,20 +2219,20 @@ function ReportsPage() {
                     <td className="px-3 py-2.5 font-mono text-xs">{r.date}</td>
                     <td className="px-3 py-2.5 text-center"><Badge text={`T${r.shift_number}`} color={r.shift_number===1?'amber':r.shift_number===2?'orange':'indigo'}/></td>
                     <td className="px-3 py-2.5">
-                      <span className={`text-xs font-bold mr-1 ${r.machine_type==='extrusao'?'text-blue-600':'text-orange-600'}`}>â</span>
+                      <span className={`text-xs font-bold mr-1 ${r.machine_type==='extrusao'?'text-blue-600':'text-orange-600'}`}>●</span>
                       {r.machine_name}
                     </td>
                     <td className="px-3 py-2.5">
-                      <div className="font-medium text-gray-900">{r.ref_name||'â'}</div>
+                      <div className="font-medium text-gray-900">{r.ref_name||'—'}</div>
                       {r.ref_code&&<div className="text-xs font-mono text-gray-400">{r.ref_code}</div>}
                     </td>
-                    <td className="px-3 py-2.5 text-gray-600">{r.operator_name||'â'} {r.operator_number?<span className="text-xs text-gray-400">(#{r.operator_number})</span>:''}</td>
+                    <td className="px-3 py-2.5 text-gray-600">{r.operator_name||'—'} {r.operator_number?<span className="text-xs text-gray-400">(#{r.operator_number})</span>:''}</td>
                     <td className="px-3 py-2.5 text-right">{Number(r.total_meters||0).toFixed(0)}</td>
                     <td className="px-3 py-2.5 text-right font-medium text-green-700">{r.total_pieces_ok||0}</td>
                     <td className="px-3 py-2.5 text-right text-red-500">{r.total_rejected||0}</td>
                     <td className="px-3 py-2.5 text-right text-gray-500">{r.stop_min||0} min</td>
                     <td className="px-3 py-2.5 text-right">
-                      <button onClick={()=>loadShiftDetail(r.id)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-medium px-2 py-1 rounded-lg transition-colors">âï¸ Ver/Editar</button>
+                      <button onClick={()=>loadShiftDetail(r.id)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-medium px-2 py-1 rounded-lg transition-colors">✏️ Ver/Editar</button>
                     </td>
                   </tr>
                 ))}
@@ -2244,13 +2244,13 @@ function ReportsPage() {
 
       {/* Shift Detail Modal */}
       {shiftDetail&&(
-        <Modal open={!!shiftDetail} onClose={()=>setShiftDetail(null)} title={`Detalhe Turno â ${shiftDetail.machine_name} T${shiftDetail.shift_number} ${shiftDetail.date}`} size="xl">
+        <Modal open={!!shiftDetail} onClose={()=>setShiftDetail(null)} title={`Detalhe Turno — ${shiftDetail.machine_name} T${shiftDetail.shift_number} ${shiftDetail.date}`} size="xl">
           <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div><span className="text-gray-400">Produto:</span> <strong>{shiftDetail.ref_name||'â'}</strong></div>
-              <div><span className="text-gray-400">Ref.:</span> <span className="font-mono">{shiftDetail.ref_code||'â'}</span></div>
+              <div><span className="text-gray-400">Produto:</span> <strong>{shiftDetail.ref_name||'—'}</strong></div>
+              <div><span className="text-gray-400">Ref.:</span> <span className="font-mono">{shiftDetail.ref_code||'—'}</span></div>
               <div><span className="text-gray-400">Operador:</span> {shiftDetail.operator_name} (#{shiftDetail.operator_number})</div>
-              <div><span className="text-gray-400">Ordem:</span> {shiftDetail.order_number||'â'}</div>
+              <div><span className="text-gray-400">Ordem:</span> {shiftDetail.order_number||'—'}</div>
             </div>
             {shiftDetail.entries?.length>0?(
               <div className="overflow-x-auto">
@@ -2262,41 +2262,41 @@ function ReportsPage() {
                         <th className="px-3 py-2 text-right">Rolos</th>
                         <th className="px-3 py-2 text-right">Metros</th>
                       </>:<>
-                        <th className="px-3 py-2 text-right">PeÃ§as OK</th>
+                        <th className="px-3 py-2 text-right">Peças OK</th>
                         <th className="px-3 py-2 text-right">Contador</th>
                       </>}
                       <th className="px-3 py-2 text-right">Rej.</th>
-                      <th className="px-3 py-2 text-right">InÃ­cio</th>
+                      <th className="px-3 py-2 text-right">Início</th>
                       <th className="px-3 py-2 text-right">Fim</th>
-                      <th className="px-3 py-2 text-left">CÃ³digo Palete</th>
+                      <th className="px-3 py-2 text-left">Código Palete</th>
                       <th className="px-3 py-2"/>
                     </tr>
                   </thead>
                   <tbody>
                     {shiftDetail.entries.map(e=>(
                       <tr key={e.id} className="border-t">
-                        <td className="px-3 py-2 font-mono text-xs text-gray-400">{e.created_at?.slice(11,16)||'â'}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-gray-400">{e.created_at?.slice(11,16)||'—'}</td>
                         {shiftDetail.machine_type==='extrusao'?<>
                           <td className="px-3 py-2 text-right">{e.rolls_bundles||0}</td>
                           <td className="px-3 py-2 text-right">{e.meters_pieces||0}</td>
                         </>:<>
                           <td className="px-3 py-2 text-right font-medium text-green-700">{e.pieces_ok||0}</td>
-                          <td className="px-3 py-2 text-right">{e.counter||'â'}</td>
+                          <td className="px-3 py-2 text-right">{e.counter||'—'}</td>
                         </>}
                         <td className="px-3 py-2 text-right text-red-500">{e.rejected||e.pieces_rejected||0}</td>
-                        <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.start_time||'â'}</td>
-                        <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.end_time||'â'}</td>
+                        <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.start_time||'—'}</td>
+                        <td className="px-3 py-2 text-right text-gray-400 text-xs">{e.end_time||'—'}</td>
                         <td className="px-3 py-2 font-mono text-xs text-green-700 font-bold">{buildPalletCode(e,shiftDetail)}</td>
                         <td className="px-3 py-2 text-right flex gap-1 justify-end">
-                          <button onClick={()=>{ setEditErr(''); setEditForm({meters_pieces:e.meters_pieces||0,rolls_bundles:e.rolls_bundles||0,pieces_ok:e.pieces_ok||0,pieces_rejected:e.pieces_rejected||0,rejected:e.rejected||0,counter:e.counter||0,start_time:e.start_time||'',end_time:e.end_time||''}); setEditEntry({entry:e,isExtrusao:shiftDetail.machine_type==='extrusao'}); }} className="text-blue-500 hover:text-blue-700 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50" title="Editar">âï¸</button>
-                          <button onClick={()=>setDelEntryId(e.id)} className="text-red-400 hover:text-red-600 text-xs px-1.5 py-0.5 rounded hover:bg-red-50" title="Eliminar">ð</button>
+                          <button onClick={()=>{ setEditErr(''); setEditForm({meters_pieces:e.meters_pieces||0,rolls_bundles:e.rolls_bundles||0,pieces_ok:e.pieces_ok||0,pieces_rejected:e.pieces_rejected||0,rejected:e.rejected||0,counter:e.counter||0,start_time:e.start_time||'',end_time:e.end_time||''}); setEditEntry({entry:e,isExtrusao:shiftDetail.machine_type==='extrusao'}); }} className="text-blue-500 hover:text-blue-700 text-xs px-1.5 py-0.5 rounded hover:bg-blue-50" title="Editar">✏️</button>
+                          <button onClick={()=>setDelEntryId(e.id)} className="text-red-400 hover:text-red-600 text-xs px-1.5 py-0.5 rounded hover:bg-red-50" title="Eliminar">🗑</button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            ):<div className="text-center text-gray-400 py-6">Sem registos de produÃ§Ã£o</div>}
+            ):<div className="text-center text-gray-400 py-6">Sem registos de produção</div>}
           </div>
         </Modal>
       )}
@@ -2313,19 +2313,19 @@ function ReportsPage() {
               <Input label="Rejeitado (metros)" type="number" min="0" step="0.1" value={editForm.rejected} onChange={e=>setEditForm(f=>({...f,rejected:e.target.value}))}/>
             </> : <>
               <div className="grid grid-cols-2 gap-3">
-                <Input label="PeÃ§as OK" type="number" min="0" value={editForm.pieces_ok} onChange={e=>setEditForm(f=>({...f,pieces_ok:e.target.value}))}/>
+                <Input label="Peças OK" type="number" min="0" value={editForm.pieces_ok} onChange={e=>setEditForm(f=>({...f,pieces_ok:e.target.value}))}/>
                 <Input label="Contador" type="number" min="0" value={editForm.counter} onChange={e=>setEditForm(f=>({...f,counter:e.target.value}))}/>
               </div>
-              <Input label="PeÃ§as Rejeitadas" type="number" min="0" value={editForm.pieces_rejected} onChange={e=>setEditForm(f=>({...f,pieces_rejected:e.target.value}))}/>
+              <Input label="Peças Rejeitadas" type="number" min="0" value={editForm.pieces_rejected} onChange={e=>setEditForm(f=>({...f,pieces_rejected:e.target.value}))}/>
             </>}
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Hora InÃ­cio" type="time" value={editForm.start_time} onChange={e=>setEditForm(f=>({...f,start_time:e.target.value}))}/>
+              <Input label="Hora Início" type="time" value={editForm.start_time} onChange={e=>setEditForm(f=>({...f,start_time:e.target.value}))}/>
               <Input label="Hora Fim" type="time" value={editForm.end_time} onChange={e=>setEditForm(f=>({...f,end_time:e.target.value}))}/>
             </div>
             {editErr&&<Alert type="error">{editErr}</Alert>}
             <div className="flex gap-3 justify-end pt-2 border-t">
               <Btn variant="outline" onClick={()=>setEditEntry(null)}>Cancelar</Btn>
-              <Btn onClick={saveEditEntry} disabled={editLoading}>{editLoading?'A guardarâ¦':'Guardar CorreÃ§Ã£o'}</Btn>
+              <Btn onClick={saveEditEntry} disabled={editLoading}>{editLoading?'A guardar…':'Guardar Correção'}</Btn>
             </div>
           </div>
         </Modal>
@@ -2336,7 +2336,7 @@ function ReportsPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <h3 className="font-bold text-gray-900 text-lg mb-2">Eliminar registo?</h3>
-            <p className="text-gray-600 text-sm mb-4">Esta aÃ§Ã£o nÃ£o pode ser revertida.</p>
+            <p className="text-gray-600 text-sm mb-4">Esta ação não pode ser revertida.</p>
             <div className="flex gap-3 justify-end">
               <Btn variant="outline" onClick={()=>setDelEntryId(null)}>Cancelar</Btn>
               <button onClick={doDelEntry} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold">Eliminar</button>
@@ -2348,7 +2348,7 @@ function ReportsPage() {
   );
 }
 
-// âââ EFFICIENCY PAGE ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── EFFICIENCY PAGE ──────────────────────────────────────────────────────────
 function EfficiencyPage() {
   const [data,setData] = useState(null);
   const [loading,setLoading] = useState(true);
@@ -2402,7 +2402,7 @@ function EfficiencyPage() {
         },
         plugins:{
           legend:{display:false},
-          tooltip:{callbacks:{title:(_,__)=>'',label:ctx=>{const e=entries[ctx.parsed.x]; return [`${e.operator_name} â ${e.machine_name}`,`OEE: ${ctx.parsed.y}%`,`Data: ${e.date}`];}}}
+          tooltip:{callbacks:{title:(_,__)=>'',label:ctx=>{const e=entries[ctx.parsed.x]; return [`${e.operator_name} — ${e.machine_name}`,`OEE: ${ctx.parsed.y}%`,`Data: ${e.date}`];}}}
         }
       }
     });
@@ -2413,10 +2413,10 @@ function EfficiencyPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">â¡ EficiÃªncia &amp; Qualidade</h1>
+        <h1 className="text-2xl font-bold text-gray-900">⚡ Eficiência &amp; Qualidade</h1>
         <div className="flex items-center gap-2">
           <Input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className="text-sm"/>
-          <span className="text-gray-400">â</span>
+          <span className="text-gray-400">→</span>
           <Input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className="text-sm"/>
           <Btn size="sm" onClick={load} disabled={loading}>Aplicar</Btn>
         </div>
@@ -2427,12 +2427,12 @@ function EfficiencyPage() {
       {/* Quality by machine */}
       {data?.qualityByMachine?.length>0&&(
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 border-b font-bold text-gray-900">Qualidade por MÃ¡quina</div>
+          <div className="p-4 border-b font-bold text-gray-900">Qualidade por Máquina</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
-                  <th className="px-4 py-2.5 text-left">MÃ¡quina</th>
+                  <th className="px-4 py-2.5 text-left">Máquina</th>
                   <th className="px-4 py-2.5 text-right">Produzido</th>
                   <th className="px-4 py-2.5 text-right">Rejeitado</th>
                   <th className="px-4 py-2.5 text-right">Taxa Qualidade</th>
@@ -2445,13 +2445,13 @@ function EfficiencyPage() {
                   return (
                     <tr key={m.id} className="border-t table-row">
                       <td className="px-4 py-2.5 font-medium">
-                        <span className={`text-xs font-bold mr-1.5 ${m.machine_type==='extrusao'?'text-blue-600':'text-orange-600'}`}>â</span>
+                        <span className={`text-xs font-bold mr-1.5 ${m.machine_type==='extrusao'?'text-blue-600':'text-orange-600'}`}>●</span>
                         {m.machine_name}
                       </td>
                       <td className="px-4 py-2.5 text-right">{m.total_ok||0}</td>
                       <td className="px-4 py-2.5 text-right text-red-500">{m.total_rejected||0}</td>
                       <td className="px-4 py-2.5 text-right">
-                        {pct!==null?<span className={`font-bold ${pct>=95?'text-green-600':pct>=80?'text-amber-600':'text-red-600'}`}>{pct}%</span>:'â'}
+                        {pct!==null?<span className={`font-bold ${pct>=95?'text-green-600':pct>=80?'text-amber-600':'text-red-600'}`}>{pct}%</span>:'—'}
                       </td>
                     </tr>
                   );
@@ -2465,23 +2465,23 @@ function EfficiencyPage() {
       {/* OEE scatter */}
       {data?.efficiencyEntries?.length>0&&(
         <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="font-bold text-gray-900 mb-3">OEE por Registo (InjeÃ§Ã£o)</div>
+          <div className="font-bold text-gray-900 mb-3">OEE por Registo (Injeção)</div>
           <div className="chart-container"><canvas ref={chartRef}/></div>
-          <p className="text-xs text-gray-400 mt-2 text-center">Apenas registos com tempo de ciclo, horas de inÃ­cio/fim e contador definidos</p>
+          <p className="text-xs text-gray-400 mt-2 text-center">Apenas registos com tempo de ciclo, horas de início/fim e contador definidos</p>
         </div>
       )}
 
       {/* Worker performance */}
       {data?.workerPerf?.length>0&&(
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 border-b font-bold text-gray-900">Performance por Operador (InjeÃ§Ã£o)</div>
+          <div className="p-4 border-b font-bold text-gray-900">Performance por Operador (Injeção)</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
                   <th className="px-4 py-2.5 text-left">Operador</th>
                   <th className="px-4 py-2.5 text-right">Turnos</th>
-                  <th className="px-4 py-2.5 text-right">PeÃ§as OK</th>
+                  <th className="px-4 py-2.5 text-right">Peças OK</th>
                   <th className="px-4 py-2.5 text-right">Rejeitadas</th>
                   <th className="px-4 py-2.5 text-right">Taxa Qualidade</th>
                 </tr>
@@ -2497,7 +2497,7 @@ function EfficiencyPage() {
                       <td className="px-4 py-2.5 text-right text-green-700 font-medium">{w.total_ok||0}</td>
                       <td className="px-4 py-2.5 text-right text-red-500">{w.total_rejected||0}</td>
                       <td className="px-4 py-2.5 text-right">
-                        {pct!==null?<span className={`font-bold ${pct>=95?'text-green-600':pct>=80?'text-amber-600':'text-red-600'}`}>{pct}%</span>:'â'}
+                        {pct!==null?<span className={`font-bold ${pct>=95?'text-green-600':pct>=80?'text-amber-600':'text-red-600'}`}>{pct}%</span>:'—'}
                       </td>
                     </tr>
                   );
@@ -2509,12 +2509,12 @@ function EfficiencyPage() {
       )}
 
       {(!data?.qualityByMachine?.length&&!data?.efficiencyEntries?.length&&!data?.workerPerf?.length)&&
-        <EmptyState icon="â¡" title="Sem dados no perÃ­odo selecionado" desc="Ajuste o intervalo de datas e clique em Aplicar"/>}
+        <EmptyState icon="⚡" title="Sem dados no período selecionado" desc="Ajuste o intervalo de datas e clique em Aplicar"/>}
     </div>
   );
 }
 
-// âââ PRODUCTION ANALYSIS PAGE âââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── PRODUCTION ANALYSIS PAGE ─────────────────────────────────────────────────
 function ProductionAnalysisPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -2543,8 +2543,8 @@ function ProductionAnalysisPage() {
       data: {
         labels,
         datasets: [
-          { label: 'ExtrusÃ£o (metros)', data: data.daily.map(d => Number(d.ext_meters)||0), backgroundColor: 'rgba(37,99,235,0.75)', borderRadius: 4, yAxisID: 'y' },
-          { label: 'InjeÃ§Ã£o (peÃ§as)', data: data.daily.map(d => Number(d.inj_pieces)||0), backgroundColor: 'rgba(234,88,12,0.75)', borderRadius: 4, yAxisID: 'y2' },
+          { label: 'Extrusão (metros)', data: data.daily.map(d => Number(d.ext_meters)||0), backgroundColor: 'rgba(37,99,235,0.75)', borderRadius: 4, yAxisID: 'y' },
+          { label: 'Injeção (peças)', data: data.daily.map(d => Number(d.inj_pieces)||0), backgroundColor: 'rgba(234,88,12,0.75)', borderRadius: 4, yAxisID: 'y2' },
           { label: 'Rejeitados', data: data.daily.map(d => Number(d.rejected)||0), backgroundColor: 'rgba(239,68,68,0.6)', borderRadius: 4, yAxisID: 'y' },
         ]
       },
@@ -2552,8 +2552,8 @@ function ProductionAnalysisPage() {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { position: 'top' } },
         scales: {
-          y: { beginAtZero: true, position: 'left', title: { display: true, text: 'ExtrusÃ£o / Rej.' } },
-          y2: { beginAtZero: true, position: 'right', title: { display: true, text: 'InjeÃ§Ã£o' }, grid: { drawOnChartArea: false } }
+          y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Extrusão / Rej.' } },
+          y2: { beginAtZero: true, position: 'right', title: { display: true, text: 'Injeção' }, grid: { drawOnChartArea: false } }
         }
       }
     });
@@ -2563,10 +2563,10 @@ function ProductionAnalysisPage() {
     if (!data?.stopReasons?.length || !chartStopRef.current) return;
     if (chartStopInst.current) chartStopInst.current.destroy();
     const colors = ['#EF4444','#F97316','#FBBF24','#22C55E','#3B82F6','#8B5CF6','#EC4899','#14B8A6'];
-    chartStopInst.current = new Chart(chartStorRef.current, {
+    chartStopInst.current = new Chart(chartStopRef.current, {
       type: 'doughnut',
       data: {
-        labels: data.stopReasons.map(s => `${s.code} â ${s.description}`),
+        labels: data.stopReasons.map(s => `${s.code} — ${s.description}`),
         datasets: [{ data: data.stopReasons.map(s => Number(s.total_min)||0), backgroundColor: colors, borderWidth: 2 }]
       },
       options: {
@@ -2602,7 +2602,7 @@ function ProductionAnalysisPage() {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } } },
         scales: {
-          y: { beginAtZero: true, title: { display: true, text: 'ProduÃ§Ã£o / dia' } },
+          y: { beginAtZero: true, title: { display: true, text: 'Produção / dia' } },
           x: { grid: { display: false } }
         }
       }
@@ -2628,19 +2628,19 @@ function ProductionAnalysisPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">ð¦ AnÃ¡lise de ProduÃ§Ã£o</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Progresso das ordens ativas Â· Ãltimos 14 dias</p>
+          <h1 className="text-2xl font-bold text-gray-900">📦 Análise de Produção</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Progresso das ordens ativas · Últimos 14 dias</p>
         </div>
-        <Btn variant="outline" onClick={load} size="sm">âº Atualizar</Btn>
+        <Btn variant="outline" onClick={load} size="sm">↺ Atualizar</Btn>
       </div>
 
       {/* Alerta 80%+ */}
       {alerts80.length > 0 && (
         <div className="bg-orange-50 border border-orange-300 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-xl">â ï¸</span>
+            <span className="text-xl">⚠️</span>
             <span className="font-bold text-orange-800 text-base">
-              {alerts80.length} ordem{alerts80.length>1?'s':''} acima de 80% â preparar conclusÃ£o
+              {alerts80.length} ordem{alerts80.length>1?'s':''} acima de 80% — preparar conclusão
             </span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2650,8 +2650,8 @@ function ProductionAnalysisPage() {
                 <div key={o.id} className="bg-white rounded-lg border border-orange-200 p-3 flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full flex items-center justify-center font-extrabold text-lg bg-orange-100 text-orange-700 shrink-0">{p}%</div>
                   <div className="min-w-0">
-                    <div className="font-bold text-gray-900 truncate">{o.ref_name||o.ref_code||'â'}</div>
-                    <div className="text-xs text-gray-500">{o.order_number} Â· {o.machine_name}</div>
+                    <div className="font-bold text-gray-900 truncate">{o.ref_name||o.ref_code||'—'}</div>
+                    <div className="text-xs text-gray-500">{o.order_number} · {o.machine_name}</div>
                     <div className="text-xs text-orange-600 font-medium mt-0.5">
                       {Number(o.produced).toFixed(0)} / {o.quantity} {UNIT_LABELS[o.unit]||''} produzidos
                     </div>
@@ -2663,12 +2663,12 @@ function ProductionAnalysisPage() {
         </div>
       )}
 
-      {/* Ordens concluÃ­das */}
+      {/* Ordens concluídas */}
       {alertsDone.length > 0 && (
         <div className="bg-green-50 border border-green-300 rounded-xl p-3 flex items-center gap-3">
-          <span className="text-xl">â</span>
+          <span className="text-xl">✅</span>
           <span className="font-semibold text-green-800">
-            {alertsDone.length} ordem{alertsDone.length>1?'s':''} concluÃ­da{alertsDone.length>1?'s':''}: {alertsDone.map(o=>o.order_number).join(', ')} â fechar e atualizar estado
+            {alertsDone.length} ordem{alertsDone.length>1?'s':''} concluída{alertsDone.length>1?'s':''}: {alertsDone.map(o=>o.order_number).join(', ')} — fechar e atualizar estado
           </span>
         </div>
       )}
@@ -2677,7 +2677,7 @@ function ProductionAnalysisPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard label="Ordens ativas" value={orders.length} color="blue"/>
         <KpiCard label="Turnos abertos agora" value={openShifts} color={openShifts>0?'green':'gray'}/>
-        <KpiCard label="Produzido hoje" value={totalProducedToday.toFixed(0)} color="blue" sub="metros + peÃ§as OK"/>
+        <KpiCard label="Produzido hoje" value={totalProducedToday.toFixed(0)} color="blue" sub="metros + peças OK"/>
         <KpiCard label="Paragens hoje" value={`${totalStopToday} min`} color={totalStopToday>120?'red':'amber'}/>
       </div>
 
@@ -2688,7 +2688,7 @@ function ProductionAnalysisPage() {
           <span className="text-xs text-gray-400">{orders.length} ativas</span>
         </div>
         {orders.length === 0 ? (
-          <EmptyState icon="ð¦" title="Sem ordens ativas" desc="Crie uma ordem de produÃ§Ã£o para comeÃ§ar"/>
+          <EmptyState icon="📦" title="Sem ordens ativas" desc="Crie uma ordem de produção para começar"/>
         ) : (
           <div className="divide-y">
             {orders.map(o => {
@@ -2708,12 +2708,12 @@ function ProductionAnalysisPage() {
                           </span>
                         )}
                         {Number(o.open_shifts)>0 && (
-                          <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">â Em produÃ§Ã£o</span>
+                          <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">● Em produção</span>
                         )}
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5">
-                        {o.order_number} Â· {o.machine_name||'â'}
-                        {o.last_shift_date && <span className="ml-2">Ãltimo turno: {o.last_shift_date}</span>}
+                        {o.order_number} · {o.machine_name||'—'}
+                        {o.last_shift_date && <span className="ml-2">Último turno: {o.last_shift_date}</span>}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -2738,10 +2738,10 @@ function ProductionAnalysisPage() {
                       <div className="flex justify-between text-xs text-gray-400 mt-1">
                         <span>
                           {Number(o.shift_count)} turno{Number(o.shift_count)!==1?'s':''}
-                          {Number(o.rejected)>0 && <span className="text-red-400 ml-2">Â· {Number(o.rejected).toFixed(0)} rej.</span>}
-                          {Number(o.produced_today)>0 && <span className="text-blue-500 ml-2">Â· hoje: +{Number(o.produced_today).toFixed(0)}</span>}
+                          {Number(o.rejected)>0 && <span className="text-red-400 ml-2">· {Number(o.rejected).toFixed(0)} rej.</span>}
+                          {Number(o.produced_today)>0 && <span className="text-blue-500 ml-2">· hoje: +{Number(o.produced_today).toFixed(0)}</span>}
                         </span>
-                        <span>{Number(o.quantity)-Number(o.produced)>0 ? `Faltam ${(Number(o.quantity)-Number(o.produced)).toFixed(0)} ${UNIT_LABELS[o.unit]||''}` : 'â ConcluÃ­do'}</span>
+                        <span>{Number(o.quantity)-Number(o.produced)>0 ? `Faltam ${(Number(o.quantity)-Number(o.produced)).toFixed(0)} ${UNIT_LABELS[o.unit]||''}` : '✓ Concluído'}</span>
                       </div>
                     </div>
                   )}
@@ -2752,14 +2752,14 @@ function ProductionAnalysisPage() {
         )}
       </div>
 
-      {/* EvoluÃ§Ã£o diÃ¡ria por ordem */}
+      {/* Evolução diária por ordem */}
       {(data.orderDaily?.length > 0) && (() => {
         const allDates = [...new Set(data.daily.map(d => d.date))].sort();
         return (
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <div className="p-4 border-b flex items-center justify-between">
-              <h2 className="font-bold text-gray-900">ð EvoluÃ§Ã£o das Ordens â Ãºltimos 14 dias</h2>
-              <span className="text-xs text-gray-400">produÃ§Ã£o diÃ¡ria por ordem</span>
+              <h2 className="font-bold text-gray-900">📈 Evolução das Ordens — últimos 14 dias</h2>
+              <span className="text-xs text-gray-400">produção diária por ordem</span>
             </div>
             <div className="p-4">
               <div className="chart-container mb-5"><canvas ref={chartEvolRef}/></div>
@@ -2795,7 +2795,7 @@ function ProductionAnalysisPage() {
                             const style = val > 0 ? { background: `rgba(59,130,246,${alpha})`, color: alpha > 0.55 ? 'white' : '#1e40af' } : {};
                             return (
                               <td key={d} className="px-1 py-2 text-center" style={style}>
-                                {val > 0 ? Number(val).toFixed(0) : <span className="text-gray-200">Â·</span>}
+                                {val > 0 ? Number(val).toFixed(0) : <span className="text-gray-200">·</span>}
                               </td>
                             );
                           })}
@@ -2812,7 +2812,7 @@ function ProductionAnalysisPage() {
                           const r = data.orderDaily.find(x => x.order_number===order.order_number && x.date===d);
                           return acc + (r ? Number(r.produced) : 0);
                         }, 0);
-                        return <td key={d} className="px-1 py-2 text-center text-gray-700">{dayTotal>0?dayTotal.toFixed(0):<span className="text-gray-200">Â·</span>}</td>;
+                        return <td key={d} className="px-1 py-2 text-center text-gray-700">{dayTotal>0?dayTotal.toFixed(0):<span className="text-gray-200">·</span>}</td>;
                       })}
                       <td className="px-3 py-2 text-right text-blue-700">
                         {orders.reduce((acc, order) => acc + data.orderDaily.filter(r => r.order_number===order.order_number).reduce((a,r) => a+Number(r.produced),0), 0).toFixed(0)}
@@ -2829,16 +2829,16 @@ function ProductionAnalysisPage() {
       {/* Charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-4">
-          <h2 className="font-bold text-gray-900 mb-3">ProduÃ§Ã£o diÃ¡ria â Ãºltimos 14 dias</h2>
+          <h2 className="font-bold text-gray-900 mb-3">Produção diária — últimos 14 dias</h2>
           {data.daily?.length > 0
             ? <div className="chart-container"><canvas ref={chartDailyRef}/></div>
-            : <EmptyState icon="ð" title="Sem dados no perÃ­odo"/>}
+            : <EmptyState icon="📊" title="Sem dados no período"/>}
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4">
-          <h2 className="font-bold text-gray-900 mb-3">Paragens por motivo â Ãºltimos 14 dias</h2>
+          <h2 className="font-bold text-gray-900 mb-3">Paragens por motivo — últimos 14 dias</h2>
           {data.stopReasons?.length > 0
             ? <div className="chart-container"><canvas ref={chartStopRef}/></div>
-            : <EmptyState icon="â¸ï¸" title="Sem paragens registadas"/>}
+            : <EmptyState icon="⏸️" title="Sem paragens registadas"/>}
         </div>
       </div>
 
@@ -2850,12 +2850,12 @@ function ProductionAnalysisPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
-                  <th className="px-4 py-2.5 text-left">CÃ³d.</th>
-                  <th className="px-4 py-2.5 text-left">DescriÃ§Ã£o</th>
+                  <th className="px-4 py-2.5 text-left">Cód.</th>
+                  <th className="px-4 py-2.5 text-left">Descrição</th>
                   <th className="px-4 py-2.5 text-left">Categoria</th>
-                  <th className="px-4 py-2.5 text-right">OcorrÃªncias</th>
+                  <th className="px-4 py-2.5 text-right">Ocorrências</th>
                   <th className="px-4 py-2.5 text-right">Tempo total</th>
-                  <th className="px-4 py-2.5 text-right">MÃ©dia/ocorrr.</th>
+                  <th className="px-4 py-2.5 text-right">Média/ocorr.</th>
                 </tr>
               </thead>
               <tbody>
@@ -2888,6 +2888,37 @@ function ProductionAnalysisPage() {
   );
 }
 
-// âââ APP ROUTER â@â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â â Õ¹Ñ¥½¸µ¥¹ÁÀ ¤ì(½¹ÍÐmÁ±ÍÑAtôÕÍMÑÑ  ¤ôùì(½¹ÍÐ ôÝ¥¹½Ü¹±½Ñ¥½¸¹¡Í ì(¥¡ ¹ÍÑÉÑÍ]¥Ñ  ½µ¥¸¼¤¤ÉÑÕÉ¸ ¹ÉÁ± ½µ¥¸¼°¤ì(ÉÑÕÉ¸Í¡½Éì(ô¤ì(ÕÍÐ  ¤ôùìÝ¥¹½Ü¹±½Ñ¥½¸¹¡Í ô½µ¥¸¼­Áìô±mÁt¤ì(½¹ÍÐÁÌôìÍ¡½ÉèñÍ¡½É¼ø°ÁÉ½Õ¼èñAÉ½ÕÑ¥½¹¹±åÍ¥ÍA¼ø°½ÉÉÌèñ=ÉÉÍA¼ø°ÉÉ¹ÌèñIÉ¹ÍA¼ø°½±½ÉÌèñ
-½±½ÉÍA¼ø°½ÁÉÑ½ÉÌèñ=ÁÉÑ½ÉÍA¼ø°µ¡¥¹Ìèñ5¡¥¹ÍA¼ø°ÍÑ½ÁÁµ½ÌèñMÑ½Á
-½ÍA¼ø°ÉÁ½ÉÑÌèñIÁ½ÉÑÍA¼ø°¥¥¹äèñ¥¥¹åA¼øôì(ÉÑÕÉ¸ñµ¥¹1å½ÕÐÁõíÁôÍÑAõíÍÑAôùíÁÍmÁuñðñÍ¡½É¼ùôð½µ¥¹1å½ÕÐøì)ô()Õ¹Ñ¥½¸ÁÀ ¤ì(½¹ÍÐíÕÍÉôôÕÍÕÑ  ¤ì(½¹ÍÐm¡Í ±ÍÑ!Í¡tôÕÍMÑÑ¡Ý¥¹½Ü¹±½Ñ¥½¸¹¡Í¡ñð¼¤ì(ÕÍÐ  ¤ôùì(½¹ÍÐ ô ¤ôùÍÑ!Í ¡Ý¥¹½Ü¹±½Ñ¥½¸¹¡Í¡ñð¼¤ì(Ý¥¹½Ü¹Ù¹Ñ1¥ÍÑ¹È ¡Í¡¡¹± ¤ì(ÉÑÕÉ¸ ¤ôùÝ¥¹½Ü¹Éµ½ÙÙ¹Ñ1¥ÍÑ¹È ¡Í¡¡¹± ¤ì(ô±mt¤ì((¥ ÕÍÈ¤ÉÑÕÉ¸ñ1½¥¹A¼øì(¥¡ÕÍÈ¹É½±ôôôÅÕ±¥Ñä¤ÉÑÕÉ¸ñEÕ±¥ÑåA¼øì(¥¡ÕÍÈ¹É½±ôôôµ¥¸¤ÉÑÕÉ¸ñµ¥¹ÁÀ¼øì(½¹ÍÐ´ô¡Í ¹µÑ  ¼p½½ÁÉÑ½Ép¼¡q¬¤¼¤ì(¥¡´¤ÉÑÕÉ¸ñ=ÁÉÑ½ÉAµ¡¥¹%õí9ÕµÈ¡µlÅt¥ô¼øì(ÉÑÕÉ¸ñ1½¥¹A¼øì)ô()½¹ÍÐÉ½½ÐôIÑ=4¹ÉÑI½½Ð¡½Õµ¹Ð¹Ñ±µ¹Ñ	å% É½½Ð¤¤ì)É½½Ð¹É¹È ñÕÑ¡AÉ½Ù¥ÈøñÁÀ¼øð½ÕÑ¡AÉ½Ù¥Èø¤ì(ð½ÍÉ¥ÁÐø(ð½½äø(ð½¡Ñµ°ø*</html>
+// ─── APP ROUTER ───────────────────────────────────────────────────────────────
+function AdminApp() {
+  const [page,setPage] = useState(()=>{
+    const h = window.location.hash;
+    if(h.startsWith('#/admin/')) return h.replace('#/admin/','');
+    return 'dashboard';
+  });
+  useEffect(()=>{ window.location.hash = '#/admin/'+page; },[page]);
+  const pages = { dashboard:<Dashboard/>, producao:<ProductionAnalysisPage/>, orders:<OrdersPage/>, references:<ReferencesPage/>, colors:<ColorsPage/>, operators:<OperatorsPage/>, machines:<MachinesPage/>, 'stoppage-codes':<StopCodesPage/>, reports:<ReportsPage/>, efficiency:<EfficiencyPage/> };
+  return <AdminLayout page={page} setPage={setPage}>{pages[page]||<Dashboard/>}</AdminLayout>;
+}
+
+function App() {
+  const {user} = useAuth();
+  const [hash,setHash] = useState(window.location.hash||'#/');
+  useEffect(()=>{
+    const h = ()=>setHash(window.location.hash||'#/');
+    window.addEventListener('hashchange',h);
+    return ()=>window.removeEventListener('hashchange',h);
+  },[]);
+
+  if(!user) return <LoginPage/>;
+  if(user.role==='quality') return <QualityPage/>;
+  if(user.role==='admin') return <AdminApp/>;
+  const m = hash.match(/#\/operator\/(\d+)/);
+  if(m) return <OperatorPage machineId={Number(m[1])}/>;
+  return <LoginPage/>;
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<AuthProvider><App/></AuthProvider>);
+</script>
+</body>
+</html>
