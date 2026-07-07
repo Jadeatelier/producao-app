@@ -842,7 +842,6 @@ function OperatorPage({machineId}) {
             </div>
           )}
         </div>
-      </div>
 
       {/* Modals */}
       <AddEntryModal open={modal==='entry'} onClose={()=>setModal(null)} shift={shift} colors={colors} isExtrusao={isExtrusao} onSave={async(d)=>{ const res=await api.post('/api/production-entries',{shift_id:shift.id,...d}); await refresh(); return res; }}/>
