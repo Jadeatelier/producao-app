@@ -1611,6 +1611,7 @@ function StopCodeForm({open,onClose,onSave,editing}) {
   const empty = {code:'',description:'',category:'Geral',active:1};
   const [form,setForm] = useState(empty);
   const [loading,setLoading] = useState(false);
+  const [formErr,setFormErr] = useState('');
   useEffect(()=>{ setForm(editing?{...editing}:empty); },[editing,open]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=async()=>{ setLoading(true); try{await onSave({...form,active:form.active?1:0});}finally{setLoading(false);} };
