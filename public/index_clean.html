@@ -2,6 +2,13 @@
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
+<meta name="theme-color" content="#00B4E6">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="SP Produção">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon.svg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Registo de Produção</title>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -2919,6 +2926,14 @@ function App() {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<AuthProvider><App/></AuthProvider>);
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js');
+  });
+}
 </script>
 </body>
 </html>
