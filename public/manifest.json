@@ -1,0 +1,24 @@
+{
+  "name": "Registo Produção - SP Sinorplasticos",
+  "short_name": "SP Produção",
+  "description": "Registo de produção SP Sinorplasticos",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#00B4E6",
+  "theme_color": "#00B4E6",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
