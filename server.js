@@ -203,7 +203,7 @@ app.post('/api/auth/admin', (req, res) => {
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
 
 // MACHINES
-app.get('/api/machines', auth, async (req, res) => {
+app.get('/api/machines', async (req, res) => {
   try { res.json(await q('SELECT * FROM machines WHERE active=1 ORDER BY type,name')); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
