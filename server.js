@@ -6,7 +6,7 @@ const path = require('path');
 
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { index: 'index_clean.html' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
@@ -534,7 +534,7 @@ app.get('/api/reports', admin, async (req, res) => {
 });
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index_clean.html'));
 });
 
 initDB()
