@@ -2,13 +2,6 @@
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<meta name="theme-color" content="#00B4E6">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="SP Produção">
-<link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/icon.svg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Registo de Produção</title>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -849,6 +842,7 @@ function OperatorPage({machineId}) {
             </div>
           )}
         </div>
+      </div>
 
       {/* Modals */}
       <AddEntryModal open={modal==='entry'} onClose={()=>setModal(null)} shift={shift} colors={colors} isExtrusao={isExtrusao} onSave={async(d)=>{ const res=await api.post('/api/production-entries',{shift_id:shift.id,...d}); await refresh(); return res; }}/>
@@ -1505,6 +1499,7 @@ function OperatorsPage() {
   const cols = [
     {key:'number',label:'Nº',cls:()=>'font-mono font-bold'},
     {key:'name',label:'Nome'},
+    {key:'pin',label:'PIN',render:r=><span className="font-mono tracking-widest text-blue-700 font-bold">{r.pin||'—'}</span>},
     {key:'role',label:'Papel',render:r=><Badge text={r.role==='quality'?'Qualidade':'Operador'} color={r.role==='quality'?'purple':'blue'}/>},
     {key:'created_at',label:'Criado em',render:r=>r.created_at?.slice(0,10)||'—'},
     {key:'active',label:'Estado',render:r=><Badge text={r.active?'Ativo':'Inativo'} color={r.active?'green':'gray'}/>},
@@ -1520,7 +1515,7 @@ function OperatorForm({open,onClose,onSave,editing}) {
   const [form,setForm] = useState({name:'',number:'',pin:'',role:'operator',active:1});
   const [loading,setLoading] = useState(false);
   const [formErr,setFormErr] = useState('');
-  useEffect(()=>{ setFormErr(''); setForm(editing?{name:editing.name,number:editing.number,pin:'',role:editing.role||'operator',active:editing.active}:{name:'',number:'',pin:'',role:'operator',active:1}); },[editing,open]);
+  useEffect(()=>{ setFormErr(''); setForm(editing?{name:editing.name,number:editing.number,pin:editing.pin||'',role:editing.role||'operator',active:editing.active}:{name:'',number:'',pin:'',role:'operator',active:1}); },[editing,open]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=async()=>{ setFormErr(''); setLoading(true); try{await onSave({...form,active:form.active?1:0});}catch(e){setFormErr(e.message);}finally{setLoading(false);} };
   return (
@@ -1618,7 +1613,6 @@ function StopCodeForm({open,onClose,onSave,editing}) {
   const empty = {code:'',description:'',category:'Geral',active:1};
   const [form,setForm] = useState(empty);
   const [loading,setLoading] = useState(false);
-  const [formErr,setFormErr] = useState('');
   useEffect(()=>{ setForm(editing?{...editing}:empty); },[editing,open]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=async()=>{ setLoading(true); try{await onSave({...form,active:form.active?1:0});}finally{setLoading(false);} };
@@ -2926,14 +2920,6 @@ function App() {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<AuthProvider><App/></AuthProvider>);
-</script>
-
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js');
-  });
-}
 </script>
 </body>
 </html>
