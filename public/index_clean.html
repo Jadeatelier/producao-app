@@ -202,8 +202,8 @@ function LoginPage() {
   const [selShift, setSelShift] = useState(currentShiftNum()); // turno escolhido pelo operador
 
   useEffect(()=>{
-    fetch('/api/machines',{headers:api.h()}).then(r=>r.json()).then(setMachines).catch(()=>{});
-    fetch('/api/operators/public').then(r=>r.json()).then(setOperators).catch(()=>{});
+    fetch('/api/machines').then(r=>r.json()).then(d=>Array.isArray(d)&&setMachines(d)).catch(()=>{});
+    fetch('/api/operators/public').then(r=>r.json()).then(d=>Array.isArray(d)&&setOperators(d)).catch(()=>{});
   },[]);
 
   const selectMachine = (m) => { setSelMachine(m); setPin(''); setOpNumber(''); setOpSearch(''); setError(''); setSelShift(currentShiftNum()); setStep('pin'); };
