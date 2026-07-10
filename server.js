@@ -382,6 +382,24 @@ app.delete('/api/references/:id', admin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.delete('/api/machines/:id', admin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const shifts = await q1('SELECT COUNT(*) as n FROM shifts WHERE machine_id=$1', [id]);
+    const entries = await q1('SELECT COUNT(pe.id) as n FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE s.machine_id=$1', [id]);
+    const orders = await q1('SELECT COUNT(*) as n FROM production_orders WHERE machine_id=$1', [id]);
+    if (req.query.dry_run) return res.json({ shifts: Number(shifts.n), entries: Number(entries.n), orders: Number(orders.n) });
+    await pool.query('DELETE FROM stoppages WHERE shift_id IN (SELECT id FROM shifts WHERE machine_id=$1)', [id]);
+    await pool.query('DELETE FROM weighing_records WHERE shift_id IN (SELECT id FROM shifts WHERE machine_id=$1)', [id]);
+    await pool.query('DELETE FROM production_entries WHERE shift_id IN (SELECT id FROM shifts WHERE machine_id=$1)', [id]);
+    await pool.query('DELETE FROM shifts WHERE machine_id=$1', [id]);
+    await pool.query('UPDATE production_orders SET machine_id=NULL WHERE machine_id=$1', [id]);
+    await pool.query('DELETE FROM machines WHERE id=$1', [id]);
+    await logAudit('MACHINE_DELETE', 'machine', Number(id), req.user);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // COLORS
 app.get('/api/colors', auth, async (req, res) => {
   try { res.json(await q('SELECT * FROM colors WHERE active=1 ORDER BY name')); }
@@ -404,6 +422,18 @@ app.put('/api/colors/:id', admin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.delete('/api/colors/:id', admin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const orders = await q1('SELECT COUNT(*) as n FROM production_orders WHERE color_id=$1', [id]);
+    if (req.query.dry_run) return res.json({ orders: Number(orders.n) });
+    await pool.query('UPDATE production_orders SET color_id=NULL WHERE color_id=$1', [id]);
+    await pool.query('DELETE FROM colors WHERE id=$1', [id]);
+    await logAudit('COLOR_DELETE', 'color', Number(id), req.user);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // STOPPAGE CODES
 app.get('/api/stoppage-codes', auth, async (req, res) => {
   try { res.json(await q('SELECT * FROM stoppage_codes WHERE active=1 ORDER BY code')); }
@@ -422,6 +452,18 @@ app.put('/api/stoppage-codes/:id', admin, async (req, res) => {
     const b = req.body;
     await pool.query('UPDATE stoppage_codes SET code=$1,description=$2,category=$3,active=$4 WHERE id=$5',
       [b.code, b.description, b.category, b.active?1:0, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/stoppage-codes/:id', admin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const stoppages = await q1('SELECT COUNT(*) as n FROM stoppages WHERE stoppage_code_id=$1', [id]);
+    if (req.query.dry_run) return res.json({ stoppages: Number(stoppages.n) });
+    await pool.query('DELETE FROM stoppages WHERE stoppage_code_id=$1', [id]);
+    await pool.query('DELETE FROM stoppage_codes WHERE id=$1', [id]);
+    await logAudit('STOPCODE_DELETE', 'stoppage_code', Number(id), req.user);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -579,9 +621,12 @@ app.post('/api/shifts', auth, async (req, res) => {
     const order = await q1("SELECT * FROM production_orders WHERE id=$1 AND status='active'", [req.body.order_id]);
     if (!order) return res.status(400).json({ error: 'Ordem nao encontrada ou nao ativa' });
     const shiftNum = Number(req.body.shift_number) || currentShift();
-    const existing = await q1("SELECT id FROM shifts WHERE machine_id=$1 AND date=$2 AND shift_number=$3 AND status='open'",
+    const sameShift = await q1("SELECT id FROM shifts WHERE machine_id=$1 AND date=$2 AND shift_number=$3 AND status='open'",
       [req.body.machine_id, todayStr(), shiftNum]);
-    if (existing) return res.json({ id: existing.id, resumed: true });
+    if (sameShift) return res.json({ id: sameShift.id, resumed: true });
+    const anyOpen = await q1("SELECT id FROM shifts WHERE machine_id=$1 AND status='open'",
+      [req.body.machine_id]);
+    if (anyOpen) return res.status(400).json({ error: 'Esta máquina já tem um turno aberto. Feche o turno atual antes de abrir um novo.' });
     const r = await q1('INSERT INTO shifts(order_id,operator_id,machine_id,shift_number,date,start_time) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
       [req.body.order_id, req.user.id, req.body.machine_id, shiftNum, todayStr(), nowTime()]);
     await logAudit('SHIFT_OPEN', 'shift', r.id, req.user, { machine_id: req.body.machine_id, order_id: req.body.order_id, shift_number: shiftNum });
@@ -625,10 +670,15 @@ app.post('/api/production-entries', auth, async (req, res) => {
 app.put('/api/production-entries/:id', auth, async (req, res) => {
   try {
     const b = req.body;
+    const before = await q1('SELECT * FROM production_entries WHERE id=$1', [req.params.id]);
     await pool.query(
       'UPDATE production_entries SET color=$1,rolls_bundles=$2,meters_pieces=$3,rejected=$4,active_cavities=$5,counter=$6,pieces_ok=$7,pieces_rejected=$8,finishing=$9,notes=$10 WHERE id=$11',
       [b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null, req.params.id]
     );
+    await logAudit('ENTRY_EDIT', 'production_entry', Number(req.params.id), req.user, {
+      before: { rolls: before?.rolls_bundles, meters: before?.meters_pieces, pieces_ok: before?.pieces_ok, rejected: before?.rejected },
+      after:  { rolls: b.rolls_bundles||0, meters: b.meters_pieces||0, pieces_ok: b.pieces_ok||0, rejected: b.rejected||0 }
+    });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -729,15 +779,20 @@ const REPORT_FROM = `FROM shifts s
 
 app.get('/api/reports', admin, async (req, res) => {
   try {
-    let sql = `SELECT ${REPORT_COLS} ${REPORT_FROM} WHERE 1=1`;
+    let where = ' WHERE 1=1';
     const p = [];
-    if (req.query.from)        { sql += ` AND s.date>=$${p.length+1}`;          p.push(req.query.from); }
-    if (req.query.to)          { sql += ` AND s.date<=$${p.length+1}`;          p.push(req.query.to); }
-    if (req.query.machine_id)  { sql += ` AND s.machine_id=$${p.length+1}`;     p.push(req.query.machine_id); }
-    if (req.query.operator_id) { sql += ` AND s.operator_id=$${p.length+1}`;    p.push(req.query.operator_id); }
-    if (req.query.reference_id){ sql += ` AND po.reference_id=$${p.length+1}`;  p.push(req.query.reference_id); }
-    sql += ' GROUP BY s.id,op.name,m.name,m.type,po.order_number,r.code,r.name,c.name ORDER BY s.date DESC,s.id DESC LIMIT 500';
-    res.json(await q(sql, p));
+    if (req.query.from)        { where += ` AND s.date>=$${p.length+1}`;          p.push(req.query.from); }
+    if (req.query.to)          { where += ` AND s.date<=$${p.length+1}`;          p.push(req.query.to); }
+    if (req.query.machine_id)  { where += ` AND s.machine_id=$${p.length+1}`;     p.push(req.query.machine_id); }
+    if (req.query.operator_id) { where += ` AND s.operator_id=$${p.length+1}`;    p.push(req.query.operator_id); }
+    if (req.query.reference_id){ where += ` AND po.reference_id=$${p.length+1}`;  p.push(req.query.reference_id); }
+    const perPage = Math.min(Number(req.query.per_page)||50, 200);
+    const page    = Math.max(Number(req.query.page)||1, 1);
+    const countRow = await q1(`SELECT COUNT(DISTINCT s.id) as n ${REPORT_FROM}${where}`, p);
+    const total = Number(countRow.n);
+    const pages = Math.ceil(total/perPage)||1;
+    const rows = await q(`SELECT ${REPORT_COLS} ${REPORT_FROM}${where} GROUP BY s.id,op.name,m.name,m.type,po.order_number,r.code,r.name,c.name ORDER BY s.date DESC,s.id DESC LIMIT $${p.length+1} OFFSET $${p.length+2}`, [...p, perPage, (page-1)*perPage]);
+    res.json({ rows, total, page, pages, per_page: perPage });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
