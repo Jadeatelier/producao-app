@@ -3,24 +3,23 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
- 
+
 const app = express();
 app.use(cors({ origin: 'https://funny-taffy-da7027.netlify.app' }));
 app.use(express.json());
- 
+
 const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const PORT = process.env.PORT || 3000;
- 
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
- 
-// Helper: run query and return rows
+
 const q = (sql, params = []) => pool.query(sql, params).then(r => r.rows);
 const q1 = (sql, params = []) => pool.query(sql, params).then(r => r.rows[0] || null);
- 
+
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS machines (
@@ -126,10 +125,20 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
- 
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_shifts_date ON shifts(date);
+    CREATE INDEX IF NOT EXISTS idx_shifts_machine_date ON shifts(machine_id,date);
+    CREATE INDEX IF NOT EXISTS idx_shifts_status ON shifts(status);
+    CREATE INDEX IF NOT EXISTS idx_entries_shift ON production_entries(shift_id);
+    CREATE INDEX IF NOT EXISTS idx_stoppages_shift ON stoppages(shift_id);
+    CREATE INDEX IF NOT EXISTS idx_weighing_shift ON weighing_records(shift_id);
+    CREATE INDEX IF NOT EXISTS idx_operators_number ON operators(number);
+  `);
+
   await pool.query('ALTER TABLE operators ADD COLUMN IF NOT EXISTS pin_plain TEXT');
   await pool.query("ALTER TABLE operators ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'operator'");
- 
+
   const { rows } = await pool.query('SELECT COUNT(*) as c FROM machines');
   if (parseInt(rows[0].c) === 0) {
     await pool.query(`
@@ -164,7 +173,7 @@ async function initDB() {
     console.log('Base de dados inicializada com dados de exemplo');
   }
 }
- 
+
 function auth(req, res, next) {
   const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Sem autorizacao' });
@@ -180,7 +189,7 @@ function admin(req, res, next) {
     req.user = u; next();
   } catch(e) { res.status(401).json({ error: 'Token invalido' }); }
 }
- 
+
 // AUTH
 app.post('/api/auth/operator', async (req, res) => {
   try {
@@ -193,15 +202,15 @@ app.post('/api/auth/operator', async (req, res) => {
     res.json({ token, operator: { id: op.id, name: op.name, number: op.number, role: op.role||'operator' } });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.post('/api/auth/admin', (req, res) => {
   if (req.body.password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Password incorreta' });
   const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '8h' });
   res.json({ token });
 });
- 
+
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
- 
+
 // MACHINES
 app.get('/api/machines', async (req, res) => {
   try { res.json(await q('SELECT * FROM machines WHERE active=1 ORDER BY type,name')); }
@@ -223,7 +232,7 @@ app.put('/api/machines/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // OPERATORS
 app.get('/api/operators/public', async (req, res) => {
   try { res.json(await q('SELECT id,name,number,role FROM operators WHERE active=1 ORDER BY name')); }
@@ -254,7 +263,7 @@ app.put('/api/operators/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // REFERENCES
 app.get('/api/references', auth, async (req, res) => {
   try {
@@ -282,7 +291,7 @@ app.put('/api/references/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // COLORS
 app.get('/api/colors', auth, async (req, res) => {
   try { res.json(await q('SELECT * FROM colors WHERE active=1 ORDER BY name')); }
@@ -304,7 +313,7 @@ app.put('/api/colors/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // STOPPAGE CODES
 app.get('/api/stoppage-codes', auth, async (req, res) => {
   try { res.json(await q('SELECT * FROM stoppage_codes WHERE active=1 ORDER BY code')); }
@@ -326,7 +335,7 @@ app.put('/api/stoppage-codes/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // ORDERS
 const ORDER_COLS = `po.*,r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,
   r.raw_material as ref_raw_material,c.name as color_name,c.hex_color,c.code as color_code,
@@ -335,7 +344,7 @@ const ORDER_COLS = `po.*,r.code as ref_code,r.name as ref_name,r.weight_per_ml,r
   LEFT JOIN refs r ON po.reference_id=r.id
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN machines m ON po.machine_id=m.id`;
- 
+
 app.get('/api/orders', auth, async (req, res) => {
   try {
     let sql = 'SELECT ' + ORDER_COLS + ' WHERE 1=1';
@@ -369,7 +378,7 @@ app.put('/api/orders/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 const TZ = 'Europe/Lisbon';
 function lisboaHour() {
   return Number(new Intl.DateTimeFormat('pt-PT', { hour: '2-digit', hour12: false, timeZone: TZ }).format(new Date()));
@@ -382,7 +391,7 @@ function currentShift() {
 }
 function todayStr() { return new Date().toLocaleDateString('en-CA', { timeZone: TZ }); }
 function nowTime() { return new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: TZ }); }
- 
+
 const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   po.order_number,po.unit,po.status as order_status,
   r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,
@@ -394,7 +403,7 @@ const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   LEFT JOIN refs r ON po.reference_id=r.id
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN machines m ON s.machine_id=m.id`;
- 
+
 app.get('/api/shifts/active', auth, async (req, res) => {
   try {
     const shift = await q1(
@@ -449,7 +458,7 @@ app.put('/api/shifts/:id/close', auth, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // PRODUCTION ENTRIES
 app.post('/api/production-entries', auth, async (req, res) => {
   try {
@@ -465,7 +474,7 @@ app.delete('/api/production-entries/:id', auth, async (req, res) => {
   try { await pool.query('DELETE FROM production_entries WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // WEIGHING
 app.post('/api/weighing', auth, async (req, res) => {
   try {
@@ -479,7 +488,7 @@ app.delete('/api/weighing/:id', auth, async (req, res) => {
   try { await pool.query('DELETE FROM weighing_records WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // STOPPAGES
 app.post('/api/stoppages', auth, async (req, res) => {
   try {
@@ -493,7 +502,7 @@ app.delete('/api/stoppages/:id', auth, async (req, res) => {
   try { await pool.query('DELETE FROM stoppages WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // DASHBOARD
 app.get('/api/dashboard', admin, async (req, res) => {
   try {
@@ -501,7 +510,7 @@ app.get('/api/dashboard', admin, async (req, res) => {
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - 6);
     const ws = weekStart.toISOString().split('T')[0];
- 
+
     const [todayProd, todayStops, machines, topStops, daily, stopCats] = await Promise.all([
       q1('SELECT SUM(pe.rolls_bundles) as total_rolls,SUM(pe.meters_pieces) as total_meters,SUM(pe.pieces_ok) as total_pieces_ok,SUM(pe.rejected+pe.pieces_rejected) as total_rejected,COUNT(DISTINCT s.id) as shift_count FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE s.date=$1', [t]),
       q1('SELECT SUM(st.duration_minutes) as total_min,COUNT(*) as count FROM stoppages st JOIN shifts s ON st.shift_id=s.id WHERE s.date=$1', [t]),
@@ -510,11 +519,11 @@ app.get('/api/dashboard', admin, async (req, res) => {
       q("SELECT s.date,SUM(CASE WHEN m.type='extrusao' THEN pe.rolls_bundles ELSE 0 END) as ext_rolls,SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE 0 END) as ext_meters,SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE 0 END) as inj_pieces FROM shifts s JOIN machines m ON s.machine_id=m.id LEFT JOIN production_entries pe ON pe.shift_id=s.id WHERE s.date>=$1 GROUP BY s.date ORDER BY s.date", [ws]),
       q('SELECT sc.category,SUM(st.duration_minutes) as total_min FROM stoppages st JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id JOIN shifts s ON st.shift_id=s.id WHERE s.date>=$1 GROUP BY sc.category ORDER BY total_min DESC', [ws])
     ]);
- 
+
     res.json({ todayProd, todayStops, machines, topStops, daily, stopCats });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // REPORTS
 app.get('/api/reports', admin, async (req, res) => {
   try {
@@ -524,24 +533,25 @@ app.get('/api/reports', admin, async (req, res) => {
       po.order_number,r.code as ref_code,r.name as ref_name,
       SUM(pe.rolls_bundles) as total_rolls,SUM(pe.meters_pieces) as total_meters,
       SUM(pe.pieces_ok) as total_pieces_ok,SUM(pe.rejected+pe.pieces_rejected) as total_rejected,
-      (SELECT SUM(st2.duration_minutes) FROM stoppages st2 WHERE st2.shift_id=s.id) as stop_min,
-      (SELECT COUNT(*) FROM stoppages st3 WHERE st3.shift_id=s.id) as stop_count
+      COALESCE(st_agg.stop_min,0) as stop_min,
+      COALESCE(st_agg.stop_count,0) as stop_count
       FROM shifts s
       JOIN machines m ON s.machine_id=m.id
       LEFT JOIN operators op ON s.operator_id=op.id
       LEFT JOIN production_orders po ON s.order_id=po.id
       LEFT JOIN refs r ON po.reference_id=r.id
       LEFT JOIN production_entries pe ON pe.shift_id=s.id
+      LEFT JOIN (SELECT shift_id,SUM(duration_minutes) as stop_min,COUNT(*) as stop_count FROM stoppages GROUP BY shift_id) st_agg ON st_agg.shift_id=s.id
       WHERE 1=1`;
     const p = [];
     if (req.query.date_from) { sql += ` AND s.date>=$${p.length+1}`; p.push(req.query.date_from); }
     if (req.query.date_to) { sql += ` AND s.date<=$${p.length+1}`; p.push(req.query.date_to); }
     if (req.query.machine_id) { sql += ` AND s.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
-    sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.code,r.name ORDER BY s.date DESC,s.shift_number';
+    sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.code,r.name,st_agg.stop_min,st_agg.stop_count ORDER BY s.date DESC,s.shift_number';
     res.json(await q(sql, p));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 initDB()
   .then(() => {
     app.listen(PORT, () => {
@@ -551,7 +561,6 @@ initDB()
     });
   })
   .catch(err => {
-    console.error('Erro ao inicializar base de dados:', err.message);
+    console.error('Erro ao inicializar BD:', err);
     process.exit(1);
   });
- 
