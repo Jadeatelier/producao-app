@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: 'https://funny-taffy-da7027.netlify.app' }));
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
