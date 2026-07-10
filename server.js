@@ -813,8 +813,7 @@ app.get('/api/reports/export', admin, async (req, res) => {
       r.order_number||'', r.ref_code||'', r.color_name||'',
       r.total_rolls, r.total_meters, r.total_pieces_ok, r.total_rejected, r.total_stop_min
     ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
-    const csv = '﻿' + [headers.join(';'), ...lines].join('
-');
+    const csv = '\uFEFF' + [headers.join(';'), ...lines].join('\r\n');
     res.setHeader('Content-Type','text/csv; charset=utf-8');
     res.setHeader('Content-Disposition',`attachment; filename="producao_${todayStr()}.csv"`);
     res.send(csv);
