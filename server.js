@@ -320,6 +320,22 @@ app.put('/api/operators/:id', admin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.delete('/api/operators/:id', admin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const shifts = await q1('SELECT COUNT(*) as n FROM shifts WHERE operator_id=$1', [id]);
+    const entries = await q1('SELECT COUNT(pe.id) as n FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE s.operator_id=$1', [id]);
+    if (req.query.dry_run) return res.json({ shifts: Number(shifts.n), entries: Number(entries.n) });
+    await pool.query('DELETE FROM stoppages WHERE shift_id IN (SELECT id FROM shifts WHERE operator_id=$1)', [id]);
+    await pool.query('DELETE FROM weighing_records WHERE shift_id IN (SELECT id FROM shifts WHERE operator_id=$1)', [id]);
+    await pool.query('DELETE FROM production_entries WHERE shift_id IN (SELECT id FROM shifts WHERE operator_id=$1)', [id]);
+    await pool.query('DELETE FROM shifts WHERE operator_id=$1', [id]);
+    await pool.query('DELETE FROM operators WHERE id=$1', [id]);
+    await logAudit('OPERATOR_DELETE', 'operator', Number(id), req.user);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // REFERENCES
 app.get('/api/references', auth, async (req, res) => {
   try {
@@ -344,6 +360,24 @@ app.put('/api/references/:id', admin, async (req, res) => {
     const b = req.body;
     await pool.query('UPDATE refs SET code=$1,name=$2,machine_type=$3,raw_material=$4,weight_per_ml=$5,weight_per_piece=$6,notes=$7,active=$8 WHERE id=$9',
       [b.code, b.name, b.machine_type, b.raw_material||null, b.weight_per_ml||null, b.weight_per_piece||null, b.notes||null, b.active?1:0, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/references/:id', admin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const orders = await q1('SELECT COUNT(*) as n FROM production_orders WHERE reference_id=$1', [id]);
+    const shifts = await q1('SELECT COUNT(*) as n FROM shifts WHERE order_id IN (SELECT id FROM production_orders WHERE reference_id=$1)', [id]);
+    const entries = await q1('SELECT COUNT(pe.id) as n FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id JOIN production_orders po ON s.order_id=po.id WHERE po.reference_id=$1', [id]);
+    if (req.query.dry_run) return res.json({ orders: Number(orders.n), shifts: Number(shifts.n), entries: Number(entries.n) });
+    await pool.query('DELETE FROM stoppages WHERE shift_id IN (SELECT s.id FROM shifts s JOIN production_orders po ON s.order_id=po.id WHERE po.reference_id=$1)', [id]);
+    await pool.query('DELETE FROM weighing_records WHERE shift_id IN (SELECT s.id FROM shifts s JOIN production_orders po ON s.order_id=po.id WHERE po.reference_id=$1)', [id]);
+    await pool.query('DELETE FROM production_entries WHERE shift_id IN (SELECT s.id FROM shifts s JOIN production_orders po ON s.order_id=po.id WHERE po.reference_id=$1)', [id]);
+    await pool.query('DELETE FROM shifts WHERE order_id IN (SELECT id FROM production_orders WHERE reference_id=$1)', [id]);
+    await pool.query('DELETE FROM production_orders WHERE reference_id=$1', [id]);
+    await pool.query('DELETE FROM refs WHERE id=$1', [id]);
+    await logAudit('REFERENCE_DELETE', 'reference', Number(id), req.user);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -440,6 +474,21 @@ app.get('/api/orders/:id/history', auth, async (req, res) => {
       total_rejected: acc.total_rejected+(Number(s.total_rejected)||0)
     }), {total_meters:0,total_pieces_ok:0,total_rolls:0,total_rejected:0});
     res.json({ shifts, totals });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/orders/:id', admin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const shifts = await q1('SELECT COUNT(*) as n FROM shifts WHERE order_id=$1', [id]);
+    const entries = await q1('SELECT COUNT(pe.id) as n FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE s.order_id=$1', [id]);
+    if (req.query.dry_run) return res.json({ shifts: Number(shifts.n), entries: Number(entries.n) });
+    await pool.query('DELETE FROM stoppages WHERE shift_id IN (SELECT id FROM shifts WHERE order_id=$1)', [id]);
+    await pool.query('DELETE FROM weighing_records WHERE shift_id IN (SELECT id FROM shifts WHERE order_id=$1)', [id]);
+    await pool.query('DELETE FROM production_entries WHERE shift_id IN (SELECT id FROM shifts WHERE order_id=$1)', [id]);
+    await pool.query('DELETE FROM shifts WHERE order_id=$1', [id]);
+    await pool.query('DELETE FROM production_orders WHERE id=$1', [id]);
+    await logAudit('ORDER_DELETE', 'order', Number(id), req.user);
+    res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/orders', admin, async (req, res) => {
@@ -548,10 +597,24 @@ app.put('/api/shifts/:id/close', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.delete('/api/shifts/:id', admin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    await pool.query('DELETE FROM stoppages WHERE shift_id=$1', [id]);
+    await pool.query('DELETE FROM weighing_records WHERE shift_id=$1', [id]);
+    await pool.query('DELETE FROM production_entries WHERE shift_id=$1', [id]);
+    await pool.query('DELETE FROM shifts WHERE id=$1', [id]);
+    await logAudit('SHIFT_DELETE', 'shift', Number(id), req.user);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // PRODUCTION ENTRIES
 app.post('/api/production-entries', auth, async (req, res) => {
   try {
     const b = req.body;
+    const hasValue = (b.rolls_bundles||0)+(b.meters_pieces||0)+(b.pieces_ok||0)+(b.pieces_rejected||0)+(b.rejected||0);
+    if (!hasValue) return res.status(400).json({ error: 'Registo em branco: introduz pelo menos um valor.' });
     const r = await q1(
       'INSERT INTO production_entries(shift_id,color,rolls_bundles,meters_pieces,rejected,active_cavities,counter,pieces_ok,pieces_rejected,finishing,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
       [b.shift_id, b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null]
