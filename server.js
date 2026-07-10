@@ -5,11 +5,13 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 
 const app = express();
 app.use(cors({ origin: 'https://funny-taffy-da7027.netlify.app' }));
 app.use(express.json());
 app.use(helmet({ contentSecurityPolicy: false }));
+app.set('trust proxy', 1);
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -20,6 +22,7 @@ const loginLimiter = rateLimit({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || null; // Set 64-char hex key in env
 const PORT = process.env.PORT || 3000;
 
 const pool = new Pool({
@@ -27,6 +30,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// Helper: run query and return rows
 const q = (sql, params = []) => pool.query(sql, params).then(r => r.rows);
 const q1 = (sql, params = []) => pool.query(sql, params).then(r => r.rows[0] || null);
 
@@ -37,6 +41,23 @@ async function logAudit(action, entityType, entityId, userInfo, details = {}) {
       [action, entityType||null, entityId||null, userInfo?.id||null, userInfo?.name||userInfo?.role||null, userInfo?.role||null, JSON.stringify(details)]
     );
   } catch(e) { console.error('Audit log error:', e.message); }
+}
+
+function encrypt(text) {
+  if (!ENCRYPTION_KEY || !text) return null;
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY.padEnd(64,'0').slice(0,64), 'hex'), iv);
+  const enc = Buffer.concat([cipher.update(String(text)), cipher.final()]);
+  return iv.toString('hex') + ':' + enc.toString('hex');
+}
+function decrypt(text) {
+  if (!ENCRYPTION_KEY || !text) return text;
+  try {
+    const parts = text.split(':');
+    if (parts.length < 2) return text; // not encrypted yet
+    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY.padEnd(64,'0').slice(0,64), 'hex'), Buffer.from(parts[0],'hex'));
+    return Buffer.concat([decipher.update(Buffer.from(parts[1],'hex')), decipher.final()]).toString();
+  } catch(e) { return null; }
 }
 
 async function initDB() {
@@ -175,6 +196,16 @@ async function initDB() {
   await pool.query('ALTER TABLE operators ADD COLUMN IF NOT EXISTS pin_plain TEXT');
   await pool.query("ALTER TABLE operators ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'operator'");
 
+  // Migrate plain PINs to encrypted storage if ENCRYPTION_KEY is set
+  if (ENCRYPTION_KEY) {
+    const unenc = await q("SELECT id,pin_plain FROM operators WHERE pin_plain IS NOT NULL AND pin_plain NOT LIKE '%:%'");
+    for (const op of unenc) {
+      await pool.query('UPDATE operators SET pin_plain=$1 WHERE id=$2', [encrypt(op.pin_plain), op.id]);
+    }
+    if (unenc.length > 0) console.log(`Encrypted ${unenc.length} operator PINs`);
+  }
+
+  // Seed admin password hash if not yet stored
   const pwdSetting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
   if (!pwdSetting) {
     const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
@@ -185,21 +216,33 @@ async function initDB() {
   if (parseInt(rows[0].c) === 0) {
     await pool.query(`
       INSERT INTO machines (name,type,has_weighing) VALUES
-        ('Extrusao 1','extrusao',0),('Extrusao 2','extrusao',1),('Extrusao 3','extrusao',0),
-        ('Injecao 1','injecao',0),('Injecao 2','injecao',0),('Injecao 3','injecao',0)
+        ('Extrusao 1','extrusao',0),
+        ('Extrusao 2','extrusao',1),
+        ('Extrusao 3','extrusao',0),
+        ('Injecao 1','injecao',0),
+        ('Injecao 2','injecao',0),
+        ('Injecao 3','injecao',0)
     `);
     await pool.query(`
       INSERT INTO stoppage_codes (code,description,category) VALUES
-        ('01','Mudanca de cor','Producao'),('02','Mudanca de referencia','Producao'),
-        ('03','Regulacao / Afinacao','Producao'),('04','Avaria mecanica','Avaria'),
-        ('05','Avaria eletrica','Avaria'),('06','Limpeza de maquina','Manutencao'),
-        ('07','Manutencao preventiva','Manutencao'),('08','Falta de materia-prima','Material'),
-        ('09','Pausa / Intervalo','Pessoal'),('10','Falta de energia','Infraestrutura'),
-        ('11','Troca de molde','Producao'),('99','Outros','Geral')
+        ('01','Mudanca de cor','Producao'),
+        ('02','Mudanca de referencia','Producao'),
+        ('03','Regulacao / Afinacao','Producao'),
+        ('04','Avaria mecanica','Avaria'),
+        ('05','Avaria eletrica','Avaria'),
+        ('06','Limpeza de maquina','Manutencao'),
+        ('07','Manutencao preventiva','Manutencao'),
+        ('08','Falta de materia-prima','Material'),
+        ('09','Pausa / Intervalo','Pessoal'),
+        ('10','Falta de energia','Infraestrutura'),
+        ('11','Troca de molde','Producao'),
+        ('99','Outros','Geral')
     `);
     const pin_hash = bcrypt.hashSync('1234', 10);
-    await pool.query('INSERT INTO operators (name,number,pin_hash,pin_plain,role) VALUES ($1,$2,$3,$4,$5)',
-      ['Operador Demo', '001', pin_hash, '1234', 'operator']);
+    await pool.query(
+      'INSERT INTO operators (name,number,pin_hash,pin_plain,role) VALUES ($1,$2,$3,$4,$5)',
+      ['Operador Demo', '001', pin_hash, '1234', 'operator']
+    );
     console.log('Base de dados inicializada com dados de exemplo');
   }
 }
@@ -294,14 +337,15 @@ app.get('/api/operators/public', async (req, res) => {
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/operators', admin, async (req, res) => {
-  try { res.json(await q('SELECT id,name,number,role,pin_plain as pin,active,created_at FROM operators ORDER BY name')); }
+  try { const ops = await q('SELECT id,name,number,role,pin_plain,active,created_at FROM operators ORDER BY name');
+    res.json(ops.map(o=>({...o, pin: decrypt(o.pin_plain), pin_plain:undefined}))); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/operators', admin, async (req, res) => {
   try {
     const b = req.body;
     const r = await q1('INSERT INTO operators(name,number,pin_hash,pin_plain,role) VALUES($1,$2,$3,$4,$5) RETURNING id',
-      [b.name, b.number, bcrypt.hashSync(String(b.pin), 10), String(b.pin), b.role||'operator']);
+      [b.name, b.number, bcrypt.hashSync(String(b.pin), 10), encrypt(String(b.pin)), b.role||'operator']);
     await logAudit('OPERATOR_CREATE', 'operator', r.id, req.user, { name: b.name, number: b.number });
     res.json({ id: r.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -311,7 +355,7 @@ app.put('/api/operators/:id', admin, async (req, res) => {
     const b = req.body;
     if (b.pin) {
       await pool.query('UPDATE operators SET name=$1,number=$2,pin_hash=$3,pin_plain=$4,role=$5,active=$6 WHERE id=$7',
-        [b.name, b.number, bcrypt.hashSync(String(b.pin),10), String(b.pin), b.role||'operator', b.active?1:0, req.params.id]);
+        [b.name, b.number, bcrypt.hashSync(String(b.pin),10), encrypt(String(b.pin)), b.role||'operator', b.active?1:0, req.params.id]);
     } else {
       await pool.query('UPDATE operators SET name=$1,number=$2,role=$3,active=$4 WHERE id=$5',
         [b.name, b.number, b.role||'operator', b.active?1:0, req.params.id]);
@@ -324,8 +368,11 @@ app.put('/api/operators/:id', admin, async (req, res) => {
 app.get('/api/references', auth, async (req, res) => {
   try {
     const mt = req.query.machine_type;
-    if (mt) res.json(await q('SELECT * FROM refs WHERE active=1 AND machine_type=$1 ORDER BY code', [mt]));
-    else res.json(await q('SELECT * FROM refs WHERE active=1 ORDER BY code'));
+    if (mt) {
+      res.json(await q('SELECT * FROM refs WHERE active=1 AND machine_type=$1 ORDER BY code', [mt]));
+    } else {
+      res.json(await q('SELECT * FROM refs WHERE active=1 ORDER BY code'));
+    }
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/references', admin, async (req, res) => {
@@ -415,6 +462,30 @@ app.get('/api/orders/:id', auth, async (req, res) => {
     res.json(o);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+app.get('/api/orders/:id/history', auth, async (req, res) => {
+  try {
+    const shifts = await q(`
+      SELECT s.id,s.date,s.shift_number,s.start_time,s.end_time,s.status,
+        op.name as operator_name,
+        COALESCE(SUM(pe.rolls_bundles),0) as total_rolls,
+        COALESCE(SUM(pe.meters_pieces),0) as total_meters,
+        COALESCE(SUM(pe.pieces_ok),0) as total_pieces_ok,
+        COALESCE(SUM(pe.rejected+pe.pieces_rejected),0) as total_rejected
+      FROM shifts s
+      LEFT JOIN operators op ON s.operator_id=op.id
+      LEFT JOIN production_entries pe ON pe.shift_id=s.id
+      WHERE s.order_id=$1
+      GROUP BY s.id,op.name ORDER BY s.date DESC,s.shift_number
+    `, [req.params.id]);
+    const totals = shifts.reduce((acc,s)=>({
+      total_meters: acc.total_meters+(Number(s.total_meters)||0),
+      total_pieces_ok: acc.total_pieces_ok+(Number(s.total_pieces_ok)||0),
+      total_rolls: acc.total_rolls+(Number(s.total_rolls)||0),
+      total_rejected: acc.total_rejected+(Number(s.total_rejected)||0)
+    }), {total_meters:0,total_pieces_ok:0,total_rolls:0,total_rejected:0});
+    res.json({ shifts, totals });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 app.post('/api/orders', admin, async (req, res) => {
   try {
     const b = req.body;
@@ -439,9 +510,9 @@ function lisboaHour() {
 }
 function currentShift() {
   const h = lisboaHour();
-  if (h >= 8 && h < 17) return 1;
-  if (h >= 17 || h < 1) return 2;
-  return 3;
+  if (h >= 8 && h < 17) return 1;  // Manhã 08-17
+  if (h >= 17 || h < 1) return 2;  // Tarde 17-01
+  return 3;                          // Noite 01-08
 }
 function todayStr() { return new Date().toLocaleDateString('en-CA', { timeZone: TZ }); }
 function nowTime() { return new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: TZ }); }
@@ -489,7 +560,13 @@ app.get('/api/shifts/:id', auth, async (req, res) => {
       [req.params.id]
     );
     const weighing = await q('SELECT * FROM weighing_records WHERE shift_id=$1 ORDER BY rolo_number,created_at', [req.params.id]);
-    res.json(Object.assign({}, shift, { entries, stoppages, weighing }));
+    const orderTotals = shift.order_id ? await q1(
+      `SELECT SUM(pe.meters_pieces) as total_meters,SUM(pe.pieces_ok) as total_pieces_ok,
+       SUM(pe.rolls_bundles) as total_rolls,SUM(pe.rejected+pe.pieces_rejected) as total_rejected
+       FROM production_entries pe JOIN shifts s2 ON pe.shift_id=s2.id WHERE s2.order_id=$1`,
+      [shift.order_id]
+    ) : null;
+    res.json(Object.assign({}, shift, { entries, stoppages, weighing, orderTotals }));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/shifts', auth, async (req, res) => {
@@ -524,6 +601,16 @@ app.post('/api/production-entries', auth, async (req, res) => {
       [b.shift_id, b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null]
     );
     res.json({ id: r.id });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/production-entries/:id', auth, async (req, res) => {
+  try {
+    const b = req.body;
+    await pool.query(
+      'UPDATE production_entries SET color=$1,rolls_bundles=$2,meters_pieces=$3,rejected=$4,active_cavities=$5,counter=$6,pieces_ok=$7,pieces_rejected=$8,finishing=$9,notes=$10 WHERE id=$11',
+      [b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null, req.params.id]
+    );
+    res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.delete('/api/production-entries/:id', auth, async (req, res) => {
@@ -566,42 +653,97 @@ app.get('/api/dashboard', admin, async (req, res) => {
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - 6);
     const ws = weekStart.toISOString().split('T')[0];
+
     const [todayProd, todayStops, machines, topStops, daily, stopCats] = await Promise.all([
       q1('SELECT SUM(pe.rolls_bundles) as total_rolls,SUM(pe.meters_pieces) as total_meters,SUM(pe.pieces_ok) as total_pieces_ok,SUM(pe.rejected+pe.pieces_rejected) as total_rejected,COUNT(DISTINCT s.id) as shift_count FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE s.date=$1', [t]),
       q1('SELECT SUM(st.duration_minutes) as total_min,COUNT(*) as count FROM stoppages st JOIN shifts s ON st.shift_id=s.id WHERE s.date=$1', [t]),
       q("SELECT m.id,m.name,m.type,s.id as shift_id,s.shift_number,s.status,s.start_time,op.name as operator_name,po.order_number,r.code as ref_code FROM machines m LEFT JOIN shifts s ON s.machine_id=m.id AND s.date=$1 AND s.status='open' LEFT JOIN operators op ON s.operator_id=op.id LEFT JOIN production_orders po ON s.order_id=po.id LEFT JOIN refs r ON po.reference_id=r.id WHERE m.active=1 ORDER BY m.type,m.name", [t]),
-      q('SELECT sc.code,sc.description,sc.category,COUNT(*) as cnt,SUM(st.duration_minutes) as total_min FROM stoppages st JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id JOIN shifts s ON st.shift_id=s.id WHERE s.date>=$1 GROUP BY sc.id,sc.code,sc.description,sc.category ORDER BY total_min DESC LIMIT 8', [ws]),
-      q("SELECT s.date,SUM(CASE WHEN m.type='extrusao' THEN pe.rolls_bundles ELSE 0 END) as ext_rolls,SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE 0 END) as ext_meters,SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE 0 END) as inj_pieces FROM shifts s JOIN machines m ON s.machine_id=m.id LEFT JOIN production_entries pe ON pe.shift_id=s.id WHERE s.date>=$1 GROUP BY s.date ORDER BY s.date", [ws]),
-      q('SELECT sc.category,SUM(st.duration_minutes) as total_min FROM stoppages st JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id JOIN shifts s ON st.shift_id=s.id WHERE s.date>=$1 GROUP BY sc.category ORDER BY total_min DESC', [ws])
+      q('SELECT sc.code,sc.description,sc.category,COUNT(*) as cnt,SUM(st.duration_minutes) as total_min FROM stoppages st JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id JOIN shifts s ON st.shift_id=s.id WHERE s.date>=$1 GROUP BY sc.id,sc.code,sc.description,sc.category ORDER BY total_min DESC LIMIT 10', [ws]),
+      q('SELECT s.date,SUM(pe.meters_pieces) as meters,SUM(pe.pieces_ok) as pieces,SUM(pe.rolls_bundles) as rolls FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE s.date>=$1 GROUP BY s.date ORDER BY s.date', [ws]),
+      q('SELECT sc.category,SUM(st.duration_minutes) as total_min FROM stoppages st JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id JOIN shifts s ON st.shift_id=s.id WHERE s.date>=$1 GROUP BY sc.category', [ws])
     ]);
-    res.json({ todayProd, todayStops, machines, topStops, daily, stopCats });
+    res.json({ today: { production: todayProd, stoppages: todayStops }, machines, topStops, daily, stopCats });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// EFFICIENCY
+app.get('/api/efficiency', admin, async (req, res) => {
+  try {
+    const from = req.query.from || new Date(Date.now()-30*86400000).toISOString().split('T')[0];
+    const to   = req.query.to   || todayStr();
+    const rows = await q(
+      `SELECT m.id,m.name,m.type,
+         COUNT(DISTINCT s.id) as shift_count,
+         SUM(st.duration_minutes) as total_stop_min,
+         SUM(pe.meters_pieces) as total_meters,
+         SUM(pe.pieces_ok) as total_pieces_ok
+       FROM machines m
+       LEFT JOIN shifts s ON s.machine_id=m.id AND s.date>=$1 AND s.date<=$2
+       LEFT JOIN production_entries pe ON pe.shift_id=s.id
+       LEFT JOIN stoppages st ON st.shift_id=s.id
+       WHERE m.active=1
+       GROUP BY m.id,m.name,m.type ORDER BY m.name`,
+      [from, to]
+    );
+    res.json(rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // REPORTS
+const REPORT_COLS = `s.id,s.date,s.shift_number,s.start_time,s.end_time,s.status,
+  op.name as operator_name,m.name as machine_name,m.type as machine_type,
+  po.order_number,r.code as ref_code,r.name as ref_name,c.name as color_name,
+  COALESCE(SUM(pe.rolls_bundles),0) as total_rolls,
+  COALESCE(SUM(pe.meters_pieces),0) as total_meters,
+  COALESCE(SUM(pe.pieces_ok),0) as total_pieces_ok,
+  COALESCE(SUM(pe.rejected+pe.pieces_rejected),0) as total_rejected,
+  COALESCE(SUM(st.duration_minutes),0) as total_stop_min`;
+
+const REPORT_FROM = `FROM shifts s
+  LEFT JOIN operators op ON s.operator_id=op.id
+  LEFT JOIN machines m ON s.machine_id=m.id
+  LEFT JOIN production_orders po ON s.order_id=po.id
+  LEFT JOIN refs r ON po.reference_id=r.id
+  LEFT JOIN colors c ON po.color_id=c.id
+  LEFT JOIN production_entries pe ON pe.shift_id=s.id
+  LEFT JOIN stoppages st ON st.shift_id=s.id`;
+
 app.get('/api/reports', admin, async (req, res) => {
   try {
-    let sql = `SELECT s.id,s.date,s.shift_number,s.start_time,s.end_time,s.status,
-      m.name as machine_name,m.type as machine_type,
-      op.name as operator_name,op.number as operator_number,
-      po.order_number,r.code as ref_code,r.name as ref_name,
-      SUM(pe.rolls_bundles) as total_rolls,SUM(pe.meters_pieces) as total_meters,
-      SUM(pe.pieces_ok) as total_pieces_ok,SUM(pe.rejected+pe.pieces_rejected) as total_rejected,
-      COALESCE(st_agg.stop_min,0) as stop_min,COALESCE(st_agg.stop_count,0) as stop_count
-      FROM shifts s
-      JOIN machines m ON s.machine_id=m.id
-      LEFT JOIN operators op ON s.operator_id=op.id
-      LEFT JOIN production_orders po ON s.order_id=po.id
-      LEFT JOIN refs r ON po.reference_id=r.id
-      LEFT JOIN production_entries pe ON pe.shift_id=s.id
-      LEFT JOIN (SELECT shift_id,SUM(duration_minutes) as stop_min,COUNT(*) as stop_count FROM stoppages GROUP BY shift_id) st_agg ON st_agg.shift_id=s.id
-      WHERE 1=1`;
+    let sql = `SELECT ${REPORT_COLS} ${REPORT_FROM} WHERE 1=1`;
     const p = [];
-    if (req.query.date_from) { sql += ` AND s.date>=$${p.length+1}`; p.push(req.query.date_from); }
-    if (req.query.date_to) { sql += ` AND s.date<=$${p.length+1}`; p.push(req.query.date_to); }
-    if (req.query.machine_id) { sql += ` AND s.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
-    sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.code,r.name,st_agg.stop_min,st_agg.stop_count ORDER BY s.date DESC,s.shift_number';
+    if (req.query.from)        { sql += ` AND s.date>=$${p.length+1}`;          p.push(req.query.from); }
+    if (req.query.to)          { sql += ` AND s.date<=$${p.length+1}`;          p.push(req.query.to); }
+    if (req.query.machine_id)  { sql += ` AND s.machine_id=$${p.length+1}`;     p.push(req.query.machine_id); }
+    if (req.query.operator_id) { sql += ` AND s.operator_id=$${p.length+1}`;    p.push(req.query.operator_id); }
+    if (req.query.reference_id){ sql += ` AND po.reference_id=$${p.length+1}`;  p.push(req.query.reference_id); }
+    sql += ' GROUP BY s.id,op.name,m.name,m.type,po.order_number,r.code,r.name,c.name ORDER BY s.date DESC,s.id DESC LIMIT 500';
     res.json(await q(sql, p));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/reports/export', admin, async (req, res) => {
+  try {
+    let sql = `SELECT ${REPORT_COLS} ${REPORT_FROM} WHERE 1=1`;
+    const p = [];
+    if (req.query.from)        { sql += ` AND s.date>=$${p.length+1}`;          p.push(req.query.from); }
+    if (req.query.to)          { sql += ` AND s.date<=$${p.length+1}`;          p.push(req.query.to); }
+    if (req.query.machine_id)  { sql += ` AND s.machine_id=$${p.length+1}`;     p.push(req.query.machine_id); }
+    if (req.query.operator_id) { sql += ` AND s.operator_id=$${p.length+1}`;    p.push(req.query.operator_id); }
+    if (req.query.reference_id){ sql += ` AND po.reference_id=$${p.length+1}`;  p.push(req.query.reference_id); }
+    sql += ' GROUP BY s.id,op.name,m.name,m.type,po.order_number,r.code,r.name,c.name ORDER BY s.date,s.id';
+    const rows = await q(sql, p);
+    const headers = ['Data','Turno','Operador','Maquina','Tipo','Ordem','Referencia','Cor','Rolos/Atados','Metros/Pecas','Pecas OK','Rejeitados','Paragens (min)'];
+    const lines = rows.map(r => [
+      r.date, r.shift_number, r.operator_name||'', r.machine_name||'', r.machine_type||'',
+      r.order_number||'', r.ref_code||'', r.color_name||'',
+      r.total_rolls, r.total_meters, r.total_pieces_ok, r.total_rejected, r.total_stop_min
+    ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
+    const csv = '﻿' + [headers.join(';'), ...lines].join('
+');
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename="producao_${todayStr()}.csv"`);
+    res.send(csv);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -610,61 +752,80 @@ app.get('/api/audit-log', admin, async (req, res) => {
   try {
     let sql = 'SELECT * FROM audit_log WHERE 1=1';
     const p = [];
-    if (req.query.action) { sql += ` AND action=$${p.length+1}`; p.push(req.query.action); }
-    if (req.query.date_from) { sql += ` AND created_at>=$${p.length+1}`; p.push(req.query.date_from); }
+    if (req.query.from) { sql += ` AND created_at::date>=$${p.length+1}`; p.push(req.query.from); }
+    if (req.query.to)   { sql += ` AND created_at::date<=$${p.length+1}`; p.push(req.query.to); }
     sql += ' ORDER BY created_at DESC LIMIT 200';
     res.json(await q(sql, p));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// CSV EXPORT
-app.get('/api/reports/export', admin, async (req, res) => {
+// AUTH
+app.post('/api/auth/operator', loginLimiter, async (req, res) => {
   try {
-    let sql = `SELECT s.id,s.date,s.shift_number,s.start_time,s.end_time,s.status,
-      m.name as machine_name,m.type as machine_type,
-      op.name as operator_name,op.number as operator_number,
-      po.order_number,r.code as ref_code,r.name as ref_name,
-      SUM(pe.rolls_bundles) as total_rolls,SUM(pe.meters_pieces) as total_meters,
-      SUM(pe.pieces_ok) as total_pieces_ok,SUM(pe.rejected+pe.pieces_rejected) as total_rejected,
-      COALESCE(st_agg.stop_min,0) as stop_min,COALESCE(st_agg.stop_count,0) as stop_count
-      FROM shifts s
-      JOIN machines m ON s.machine_id=m.id
-      LEFT JOIN operators op ON s.operator_id=op.id
-      LEFT JOIN production_orders po ON s.order_id=po.id
-      LEFT JOIN refs r ON po.reference_id=r.id
-      LEFT JOIN production_entries pe ON pe.shift_id=s.id
-      LEFT JOIN (SELECT shift_id,SUM(duration_minutes) as stop_min,COUNT(*) as stop_count FROM stoppages GROUP BY shift_id) st_agg ON st_agg.shift_id=s.id
-      WHERE 1=1`;
-    const p = [];
-    if (req.query.date_from) { sql += ` AND s.date>=$${p.length+1}`; p.push(req.query.date_from); }
-    if (req.query.date_to) { sql += ` AND s.date<=$${p.length+1}`; p.push(req.query.date_to); }
-    if (req.query.machine_id) { sql += ` AND s.machine_id=$${p.length+1}`; p.push(req.query.machine_id); }
-    sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.code,r.name,st_agg.stop_min,st_agg.stop_count ORDER BY s.date DESC,s.shift_number';
-    const rows = await q(sql, p);
-    const esc = v => `"${String(v??'').replace(/"/g,'""')}"`;
-    const headers = ['Data','Turno','Maquina','Tipo','Operador','Numero','Ordem','Ref','Nome Ref','Rolos/Atados','Metros/Pecas','Pecas OK','Rejeitados','Paragens min','Num Paragens','Estado'];
-    const csvRows = rows.map(r => [
-      r.date, r.shift_number, r.machine_name, r.machine_type,
-      r.operator_name||'', r.operator_number||'', r.order_number||'',
-      r.ref_code||'', r.ref_name||'',
-      r.total_rolls||0, r.total_meters||0, r.total_pieces_ok||0, r.total_rejected||0,
-      r.stop_min||0, r.stop_count||0, r.status
-    ].map(esc).join(','));
-    const csv = '\uFEFF' + [headers.map(esc).join(','), ...csvRows].join('\r\n');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="relatorio-${todayStr()}.csv"`);
-    res.send(csv);
+    const { number, pin } = req.body;
+    const op = await q1('SELECT * FROM operators WHERE number=$1 AND active=1', [number]);
+    if (!op) return res.status(401).json({ error: 'Operador não encontrado' });
+    const ok = await bcrypt.compare(String(pin), op.pin_hash);
+    if (!ok) return res.status(401).json({ error: 'PIN incorreto' });
+    const token = jwt.sign({ id: op.id, name: op.name, number: op.number, role: op.role||'operator' }, JWT_SECRET, { expiresIn: '12h' });
+    await logAudit('LOGIN', 'operator', op.id, { id: op.id, name: op.name, role: op.role||'operator' });
+    res.json({ token, operator: { id: op.id, name: op.name, number: op.number, role: op.role||'operator' } });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/auth/admin', loginLimiter, async (req, res) => {
+  try {
+    const { password } = req.body;
+    const setting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
+    let ok = false;
+    if (setting) {
+      ok = await bcrypt.compare(password, setting.value);
+    } else {
+      ok = (password === (process.env.ADMIN_PASSWORD || 'admin123'));
+      if (ok) {
+        const hash = bcrypt.hashSync(password, 10);
+        await pool.query("INSERT INTO app_settings(key,value) VALUES('admin_password_hash',$1) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()", [hash]);
+      }
+    }
+    if (!ok) return res.status(401).json({ error: 'Palavra-passe incorreta' });
+    const token = jwt.sign({ id: 0, name: 'Admin', role: 'admin' }, JWT_SECRET, { expiresIn: '8h' });
+    await logAudit('LOGIN', 'admin', null, { id: 0, name: 'Admin', role: 'admin' });
+    res.json({ token });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/auth/admin/password', loginLimiter, admin, async (req, res) => {
+  try {
+    const { current_password, new_password } = req.body;
+    if (!new_password || new_password.length < 6) return res.status(400).json({ error: 'A nova palavra-passe deve ter pelo menos 6 caracteres' });
+    const setting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
+    let ok = false;
+    if (setting) {
+      ok = await bcrypt.compare(current_password, setting.value);
+    } else {
+      ok = (current_password === (process.env.ADMIN_PASSWORD || 'admin123'));
+    }
+    if (!ok) return res.status(401).json({ error: 'Palavra-passe atual incorreta' });
+    const newHash = bcrypt.hashSync(new_password, 10);
+    await pool.query("INSERT INTO app_settings(key,value) VALUES('admin_password_hash',$1) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()", [newHash]);
+    await logAudit('ADMIN_PASSWORD_CHANGED', 'admin', null, { id: 0, name: 'Admin', role: 'admin' });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// SETTINGS
+app.get('/api/settings', admin, async (req, res) => {
+  try { res.json(await q('SELECT key,value,updated_at FROM app_settings')); }
+  catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// STARTUP
 initDB()
   .then(() => {
     app.listen(PORT, () => {
       console.log('Servidor a correr em http://localhost:' + PORT);
-      console.log('Password admin: ' + ADMIN_PASSWORD);
+      if (JWT_SECRET === 'producao-secret-2024-change-me') console.warn('⚠️  AVISO: JWT_SECRET não definido! Define a variável de ambiente JWT_SECRET no Render.');
+      if (!ENCRYPTION_KEY) console.warn('⚠️  AVISO: ENCRYPTION_KEY não definido. PINs dos operadores guardados sem encriptação.');
     });
   })
-  .catch(err => {
-    console.error('Erro ao inicializar base de dados:', err.message);
-    process.exit(1);
-  });
+  .catch(err => { console.error('Falha ao inicializar a BD:', err); process.exit(1); });
