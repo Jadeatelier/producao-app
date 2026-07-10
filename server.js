@@ -124,6 +124,11 @@ async function initDB() {
       notes TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
   `);
 
   await pool.query(`
@@ -138,6 +143,12 @@ async function initDB() {
 
   await pool.query('ALTER TABLE operators ADD COLUMN IF NOT EXISTS pin_plain TEXT');
   await pool.query("ALTER TABLE operators ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'operator'");
+
+  const pwdSetting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
+  if (!pwdSetting) {
+    const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+    await pool.query("INSERT INTO app_settings(key,value) VALUES('admin_password_hash',$1)", [hash]);
+  }
 
   const { rows } = await pool.query('SELECT COUNT(*) as c FROM machines');
   if (parseInt(rows[0].c) === 0) {
@@ -203,10 +214,33 @@ app.post('/api/auth/operator', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/auth/admin', (req, res) => {
-  if (req.body.password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Password incorreta' });
-  const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '8h' });
-  res.json({ token });
+app.post('/api/auth/admin', async (req, res) => {
+  try {
+    const setting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
+    const hash = setting ? setting.value : bcrypt.hashSync(ADMIN_PASSWORD, 10);
+    if (!bcrypt.compareSync(req.body.password || '', hash))
+      return res.status(401).json({ error: 'Password incorreta' });
+    const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '8h' });
+    res.json({ token });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/auth/admin/password', admin, async (req, res) => {
+  try {
+    const { current_password, new_password } = req.body;
+    if (!new_password || new_password.length < 6)
+      return res.status(400).json({ error: 'Nova password deve ter pelo menos 6 caracteres' });
+    const setting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
+    const hash = setting ? setting.value : bcrypt.hashSync(ADMIN_PASSWORD, 10);
+    if (!bcrypt.compareSync(current_password || '', hash))
+      return res.status(401).json({ error: 'Password atual incorreta' });
+    const newHash = bcrypt.hashSync(new_password, 10);
+    await pool.query(
+      "INSERT INTO app_settings(key,value,updated_at) VALUES('admin_password_hash',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()",
+      [newHash]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
@@ -385,9 +419,9 @@ function lisboaHour() {
 }
 function currentShift() {
   const h = lisboaHour();
-  if (h >= 8 && h < 17) return 1;  // Manhã 08-17
-  if (h >= 17 || h < 1) return 2;  // Tarde 17-01
-  return 3;                          // Noite 01-08
+  if (h >= 8 && h < 17) return 1;
+  if (h >= 17 || h < 1) return 2;
+  return 3;
 }
 function todayStr() { return new Date().toLocaleDateString('en-CA', { timeZone: TZ }); }
 function nowTime() { return new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: TZ }); }
@@ -510,7 +544,6 @@ app.get('/api/dashboard', admin, async (req, res) => {
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - 6);
     const ws = weekStart.toISOString().split('T')[0];
-
     const [todayProd, todayStops, machines, topStops, daily, stopCats] = await Promise.all([
       q1('SELECT SUM(pe.rolls_bundles) as total_rolls,SUM(pe.meters_pieces) as total_meters,SUM(pe.pieces_ok) as total_pieces_ok,SUM(pe.rejected+pe.pieces_rejected) as total_rejected,COUNT(DISTINCT s.id) as shift_count FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE s.date=$1', [t]),
       q1('SELECT SUM(st.duration_minutes) as total_min,COUNT(*) as count FROM stoppages st JOIN shifts s ON st.shift_id=s.id WHERE s.date=$1', [t]),
@@ -519,7 +552,6 @@ app.get('/api/dashboard', admin, async (req, res) => {
       q("SELECT s.date,SUM(CASE WHEN m.type='extrusao' THEN pe.rolls_bundles ELSE 0 END) as ext_rolls,SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE 0 END) as ext_meters,SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE 0 END) as inj_pieces FROM shifts s JOIN machines m ON s.machine_id=m.id LEFT JOIN production_entries pe ON pe.shift_id=s.id WHERE s.date>=$1 GROUP BY s.date ORDER BY s.date", [ws]),
       q('SELECT sc.category,SUM(st.duration_minutes) as total_min FROM stoppages st JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id JOIN shifts s ON st.shift_id=s.id WHERE s.date>=$1 GROUP BY sc.category ORDER BY total_min DESC', [ws])
     ]);
-
     res.json({ todayProd, todayStops, machines, topStops, daily, stopCats });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -557,10 +589,9 @@ initDB()
     app.listen(PORT, () => {
       console.log('Servidor a correr em http://localhost:' + PORT);
       console.log('Password admin: ' + ADMIN_PASSWORD);
-      console.log('Operador demo: No 001, PIN 1234');
     });
   })
   .catch(err => {
-    console.error('Erro ao inicializar BD:', err);
+    console.error('Erro ao inicializar base de dados:', err.message);
     process.exit(1);
   });
