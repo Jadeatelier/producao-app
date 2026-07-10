@@ -2,11 +2,11 @@ const express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const path = require('path');
+const cors = require('cors');
 
 const app = express();
+app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public'), { index: 'index_clean.html' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
@@ -189,8 +189,8 @@ app.post('/api/auth/operator', async (req, res) => {
     const op = await q1('SELECT * FROM operators WHERE number=$1 AND active=1', [number]);
     if (!op || !bcrypt.compareSync(pin, op.pin_hash))
       return res.status(401).json({ error: 'Numero ou PIN incorretos' });
-    const token = jwt.sign({ id: op.id, name: op.name, number: op.number, role: 'operator' }, JWT_SECRET, { expiresIn: '12h' });
-    res.json({ token, operator: { id: op.id, name: op.name, number: op.number } });
+    const token = jwt.sign({ id: op.id, name: op.name, number: op.number, role: op.role||'operator' }, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ token, operator: { id: op.id, name: op.name, number: op.number, role: op.role||'operator' } });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -225,6 +225,10 @@ app.put('/api/machines/:id', admin, async (req, res) => {
 });
 
 // OPERATORS
+app.get('/api/operators/public', async (req, res) => {
+  try { res.json(await q('SELECT id,name,number,role FROM operators WHERE active=1 ORDER BY name')); }
+  catch(e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/operators', admin, async (req, res) => {
   try { res.json(await q('SELECT id,name,number,role,pin_plain as pin,active,created_at FROM operators ORDER BY name')); }
   catch(e) { res.status(500).json({ error: e.message }); }
@@ -531,10 +535,6 @@ app.get('/api/reports', admin, async (req, res) => {
     sql += ' GROUP BY s.id,m.name,m.type,op.name,op.number,po.order_number,r.code,r.name ORDER BY s.date DESC,s.shift_number';
     res.json(await q(sql, p));
   } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index_clean.html'));
 });
 
 initDB()
