@@ -263,50 +263,6 @@ function admin(req, res, next) {
   } catch(e) { res.status(401).json({ error: 'Token invalido' }); }
 }
 
-// AUTH
-app.post('/api/auth/operator', loginLimiter, async (req, res) => {
-  try {
-    const { number, pin } = req.body;
-    if (!number || !pin) return res.status(400).json({ error: 'Numero e PIN obrigatorios' });
-    const op = await q1('SELECT * FROM operators WHERE number=$1 AND active=1', [number]);
-    if (!op || !bcrypt.compareSync(pin, op.pin_hash))
-      return res.status(401).json({ error: 'Numero ou PIN incorretos' });
-    const token = jwt.sign({ id: op.id, name: op.name, number: op.number, role: op.role||'operator' }, JWT_SECRET, { expiresIn: '12h' });
-    await logAudit('LOGIN', 'operator', op.id, { id: op.id, name: op.name, role: op.role||'operator' });
-    res.json({ token, operator: { id: op.id, name: op.name, number: op.number, role: op.role||'operator' } });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/auth/admin', loginLimiter, async (req, res) => {
-  try {
-    const setting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
-    const hash = setting ? setting.value : bcrypt.hashSync(ADMIN_PASSWORD, 10);
-    if (!bcrypt.compareSync(req.body.password || '', hash))
-      return res.status(401).json({ error: 'Password incorreta' });
-    const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '8h' });
-    res.json({ token });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/auth/admin/password', admin, async (req, res) => {
-  try {
-    const { current_password, new_password } = req.body;
-    if (!new_password || new_password.length < 6)
-      return res.status(400).json({ error: 'Nova password deve ter pelo menos 6 caracteres' });
-    const setting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
-    const hash = setting ? setting.value : bcrypt.hashSync(ADMIN_PASSWORD, 10);
-    if (!bcrypt.compareSync(current_password || '', hash))
-      return res.status(401).json({ error: 'Password atual incorreta' });
-    const newHash = bcrypt.hashSync(new_password, 10);
-    await pool.query(
-      "INSERT INTO app_settings(key,value,updated_at) VALUES('admin_password_hash',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()",
-      [newHash]
-    );
-    await logAudit('ADMIN_PASSWORD_CHANGED', 'admin', null, req.user);
-    res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
 
 // MACHINES
@@ -776,15 +732,21 @@ app.post('/api/auth/operator', loginLimiter, async (req, res) => {
 app.post('/api/auth/admin', loginLimiter, async (req, res) => {
   try {
     const { password } = req.body;
+    // ADMIN_PASSWORD env var always works as emergency override
+    const envPass = process.env.ADMIN_PASSWORD;
+    if (envPass && password === envPass) {
+      const token = jwt.sign({ id: 0, name: 'Admin', role: 'admin' }, JWT_SECRET, { expiresIn: '8h' });
+      await logAudit('LOGIN', 'admin', null, { id: 0, name: 'Admin', role: 'admin', via: 'env_override' });
+      return res.json({ token });
+    }
     const setting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
     let ok = false;
     if (setting) {
       ok = await bcrypt.compare(password, setting.value);
     } else {
-      ok = (password === (process.env.ADMIN_PASSWORD || 'admin123'));
+      ok = (password === 'admin123');
       if (ok) {
-        const hash = bcrypt.hashSync(password, 10);
-        await pool.query("INSERT INTO app_settings(key,value) VALUES('admin_password_hash',$1) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()", [hash]);
+        await pool.query("INSERT INTO app_settings(key,value) VALUES('admin_password_hash',$1) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()", [bcrypt.hashSync(password, 10)]);
       }
     }
     if (!ok) return res.status(401).json({ error: 'Palavra-passe incorreta' });
