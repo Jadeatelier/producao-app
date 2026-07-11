@@ -6,34 +6,43 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
- 
+
 const app = express();
 app.use(cors({ origin: 'https://funny-taffy-da7027.netlify.app' }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.set('trust proxy', 1);
- 
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: 'Demasiadas tentativas. Aguarde 15 minutos.' },
   standardHeaders: true, legacyHeaders: false
 });
- 
+
 const JWT_SECRET = process.env.JWT_SECRET || 'producao-secret-2024-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || null; // Set 64-char hex key in env
 const PORT = process.env.PORT || 3000;
- 
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
- 
+
 // Helper: run query and return rows
 const q = (sql, params = []) => pool.query(sql, params).then(r => r.rows);
 const q1 = (sql, params = []) => pool.query(sql, params).then(r => r.rows[0] || null);
- 
+
+// Sanitize DB errors — não expor detalhes internos ao cliente
+function dbErr(e) {
+  console.error('DB error:', e.message);
+  if (e.code === '23505') return 'Já existe um registo com estes dados (duplicado).';
+  if (e.code === '23503') return 'Não é possível eliminar: existem registos dependentes.';
+  if (e.code === '23502') return 'Campo obrigatório em falta.';
+  return 'Erro interno do servidor. Tente novamente.';
+}
+
 async function logAudit(action, entityType, entityId, userInfo, details = {}) {
   try {
     await pool.query(
@@ -42,7 +51,7 @@ async function logAudit(action, entityType, entityId, userInfo, details = {}) {
     );
   } catch(e) { console.error('Audit log error:', e.message); }
 }
- 
+
 function encrypt(text) {
   if (!ENCRYPTION_KEY || !text) return null;
   const iv = crypto.randomBytes(16);
@@ -59,7 +68,7 @@ function decrypt(text) {
     return Buffer.concat([decipher.update(Buffer.from(parts[1],'hex')), decipher.final()]).toString();
   } catch(e) { return null; }
 }
- 
+
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS machines (
@@ -181,7 +190,7 @@ async function initDB() {
       updated_at TIMESTAMP DEFAULT NOW()
     );
   `);
- 
+
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_shifts_date ON shifts(date);
     CREATE INDEX IF NOT EXISTS idx_shifts_machine_date ON shifts(machine_id,date);
@@ -192,10 +201,10 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_operators_number ON operators(number);
     CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
   `);
- 
+
   await pool.query('ALTER TABLE operators ADD COLUMN IF NOT EXISTS pin_plain TEXT');
   await pool.query("ALTER TABLE operators ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'operator'");
- 
+
   // Migrate plain PINs to encrypted storage if ENCRYPTION_KEY is set
   if (ENCRYPTION_KEY) {
     const unenc = await q("SELECT id,pin_plain FROM operators WHERE pin_plain IS NOT NULL AND pin_plain NOT LIKE '%:%'");
@@ -204,14 +213,14 @@ async function initDB() {
     }
     if (unenc.length > 0) console.log(`Encrypted ${unenc.length} operator PINs`);
   }
- 
+
   // Seed admin password hash if not yet stored
   const pwdSetting = await q1("SELECT value FROM app_settings WHERE key='admin_password_hash'");
   if (!pwdSetting) {
     const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
     await pool.query("INSERT INTO app_settings(key,value) VALUES('admin_password_hash',$1)", [hash]);
   }
- 
+
   const { rows } = await pool.query('SELECT COUNT(*) as c FROM machines');
   if (parseInt(rows[0].c) === 0) {
     await pool.query(`
@@ -246,7 +255,7 @@ async function initDB() {
     console.log('Base de dados inicializada com dados de exemplo');
   }
 }
- 
+
 function auth(req, res, next) {
   const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Sem autorizacao' });
@@ -262,9 +271,9 @@ function admin(req, res, next) {
     req.user = u; next();
   } catch(e) { res.status(401).json({ error: 'Token invalido' }); }
 }
- 
+
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
- 
+
 // MACHINES
 app.get('/api/machines', async (req, res) => {
   try { res.json(await q('SELECT * FROM machines WHERE active=1 ORDER BY type,name')); }
@@ -286,7 +295,7 @@ app.put('/api/machines/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // OPERATORS
 app.get('/api/operators/public', async (req, res) => {
   try { res.json(await q('SELECT id,name,number,role FROM operators WHERE active=1 ORDER BY name')); }
@@ -294,7 +303,8 @@ app.get('/api/operators/public', async (req, res) => {
 });
 app.get('/api/operators', admin, async (req, res) => {
   try { const ops = await q('SELECT id,name,number,role,pin_plain,active,created_at FROM operators ORDER BY name');
-    res.json(ops.map(o=>({...o, pin: decrypt(o.pin_plain), pin_plain:undefined}))); }
+    // PIN mascarado: mostra apenas '****' — nunca expor PINs em texto claro via API
+    res.json(ops.map(o=>({...o, pin: o.pin_plain ? '****' : null, pin_plain:undefined}))); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/operators', admin, async (req, res) => {
@@ -319,7 +329,7 @@ app.put('/api/operators/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.delete('/api/operators/:id', admin, async (req, res) => {
   try {
     const id = req.params.id;
@@ -335,7 +345,7 @@ app.delete('/api/operators/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // REFERENCES
 app.get('/api/references', auth, async (req, res) => {
   try {
@@ -363,7 +373,7 @@ app.put('/api/references/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.delete('/api/references/:id', admin, async (req, res) => {
   try {
     const id = req.params.id;
@@ -381,7 +391,7 @@ app.delete('/api/references/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.delete('/api/machines/:id', admin, async (req, res) => {
   try {
     const id = req.params.id;
@@ -399,7 +409,7 @@ app.delete('/api/machines/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // COLORS
 app.get('/api/colors', auth, async (req, res) => {
   try { res.json(await q('SELECT * FROM colors WHERE active=1 ORDER BY name')); }
@@ -421,7 +431,7 @@ app.put('/api/colors/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.delete('/api/colors/:id', admin, async (req, res) => {
   try {
     const id = req.params.id;
@@ -433,7 +443,7 @@ app.delete('/api/colors/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // STOPPAGE CODES
 app.get('/api/stoppage-codes', auth, async (req, res) => {
   try { res.json(await q('SELECT * FROM stoppage_codes WHERE active=1 ORDER BY code')); }
@@ -455,7 +465,7 @@ app.put('/api/stoppage-codes/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.delete('/api/stoppage-codes/:id', admin, async (req, res) => {
   try {
     const id = req.params.id;
@@ -467,7 +477,7 @@ app.delete('/api/stoppage-codes/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // ORDERS
 const ORDER_COLS = `po.*,r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,
   r.raw_material as ref_raw_material,c.name as color_name,c.hex_color,c.code as color_code,
@@ -476,7 +486,7 @@ const ORDER_COLS = `po.*,r.code as ref_code,r.name as ref_name,r.weight_per_ml,r
   LEFT JOIN refs r ON po.reference_id=r.id
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN machines m ON po.machine_id=m.id`;
- 
+
 app.get('/api/orders', auth, async (req, res) => {
   try {
     let sql = 'SELECT ' + ORDER_COLS + ' WHERE 1=1';
@@ -550,7 +560,7 @@ app.put('/api/orders/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 const TZ = 'Europe/Lisbon';
 function lisboaHour() {
   return Number(new Intl.DateTimeFormat('pt-PT', { hour: '2-digit', hour12: false, timeZone: TZ }).format(new Date()));
@@ -563,7 +573,7 @@ function currentShift() {
 }
 function todayStr() { return new Date().toLocaleDateString('en-CA', { timeZone: TZ }); }
 function nowTime() { return new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: TZ }); }
- 
+
 const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   po.order_number,po.unit,po.status as order_status,
   r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,
@@ -575,12 +585,13 @@ const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   LEFT JOIN refs r ON po.reference_id=r.id
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN machines m ON s.machine_id=m.id`;
- 
+
 app.get('/api/shifts/active', auth, async (req, res) => {
   try {
+    // Sem filtro de data: um turno noturno aberto ontem deve ser encontrado hoje
     const shift = await q1(
-      `SELECT ${SHIFT_COLS} WHERE s.machine_id=$1 AND s.date=$2 AND s.status='open' ORDER BY s.created_at DESC LIMIT 1`,
-      [req.query.machine_id, todayStr()]
+      `SELECT ${SHIFT_COLS} WHERE s.machine_id=$1 AND s.status='open' ORDER BY s.created_at DESC LIMIT 1`,
+      [req.query.machine_id]
     );
     res.json(shift || null);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -641,7 +652,7 @@ app.put('/api/shifts/:id/close', auth, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.delete('/api/shifts/:id', admin, async (req, res) => {
   try {
     const id = req.params.id;
@@ -653,7 +664,7 @@ app.delete('/api/shifts/:id', admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // PRODUCTION ENTRIES
 app.post('/api/production-entries', auth, async (req, res) => {
   try {
@@ -683,10 +694,20 @@ app.put('/api/production-entries/:id', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.delete('/api/production-entries/:id', auth, async (req, res) => {
-  try { await pool.query('DELETE FROM production_entries WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  try {
+    // Admins podem apagar tudo; operadores só podem apagar os seus próprios registos
+    if (req.user.role !== 'admin') {
+      const entry = await q1(
+        'SELECT pe.id FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE pe.id=$1 AND s.operator_id=$2',
+        [req.params.id, req.user.id]
+      );
+      if (!entry) return res.status(403).json({ error: 'Não tens permissão para apagar este registo' });
+    }
+    await pool.query('DELETE FROM production_entries WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // WEIGHING
 app.post('/api/weighing', auth, async (req, res) => {
   try {
@@ -697,10 +718,19 @@ app.post('/api/weighing', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.delete('/api/weighing/:id', auth, async (req, res) => {
-  try { await pool.query('DELETE FROM weighing_records WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  try {
+    if (req.user.role !== 'admin') {
+      const rec = await q1(
+        'SELECT w.id FROM weighing_records w JOIN shifts s ON w.shift_id=s.id WHERE w.id=$1 AND s.operator_id=$2',
+        [req.params.id, req.user.id]
+      );
+      if (!rec) return res.status(403).json({ error: 'Não tens permissão para apagar esta pesagem' });
+    }
+    await pool.query('DELETE FROM weighing_records WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // STOPPAGES
 app.post('/api/stoppages', auth, async (req, res) => {
   try {
@@ -711,18 +741,28 @@ app.post('/api/stoppages', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.delete('/api/stoppages/:id', auth, async (req, res) => {
-  try { await pool.query('DELETE FROM stoppages WHERE id=$1', [req.params.id]); res.json({ ok: true }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  try {
+    if (req.user.role !== 'admin') {
+      const rec = await q1(
+        'SELECT st.id FROM stoppages st JOIN shifts s ON st.shift_id=s.id WHERE st.id=$1 AND s.operator_id=$2',
+        [req.params.id, req.user.id]
+      );
+      if (!rec) return res.status(403).json({ error: 'Não tens permissão para apagar esta paragem' });
+    }
+    await pool.query('DELETE FROM stoppages WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // DASHBOARD
 app.get('/api/dashboard', admin, async (req, res) => {
   try {
     const t = todayStr();
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - 6);
-    const ws = weekStart.toISOString().split('T')[0];
- 
+    // Usar timezone de Lisboa para garantir que "hoje" é consistente com o frontend
+    const wsDate = new Date();
+    wsDate.setDate(wsDate.getDate() - 6);
+    const ws = wsDate.toLocaleDateString('sv-SE', { timeZone: 'Europe/Lisbon' }); // sv-SE dá formato YYYY-MM-DD
+
     const [todayProd, todayStops, machines, topStops, daily, stopCats] = await Promise.all([
       q1('SELECT SUM(pe.rolls_bundles) as total_rolls,SUM(pe.meters_pieces) as total_meters,SUM(pe.pieces_ok) as total_pieces_ok,SUM(pe.rejected+pe.pieces_rejected) as total_rejected,COUNT(DISTINCT s.id) as shift_count FROM production_entries pe JOIN shifts s ON pe.shift_id=s.id WHERE s.date=$1', [t]),
       q1('SELECT SUM(st.duration_minutes) as total_min,COUNT(*) as count FROM stoppages st JOIN shifts s ON st.shift_id=s.id WHERE s.date=$1', [t]),
@@ -734,7 +774,7 @@ app.get('/api/dashboard', admin, async (req, res) => {
     res.json({ today: { production: todayProd, stoppages: todayStops }, machines, topStops, daily, stopCats });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // EFFICIENCY
 app.get('/api/efficiency', admin, async (req, res) => {
   try {
@@ -757,7 +797,7 @@ app.get('/api/efficiency', admin, async (req, res) => {
     res.json(rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // REPORTS
 const REPORT_COLS = `s.id,s.date,s.shift_number,s.start_time,s.end_time,s.status,
   op.name as operator_name,m.name as machine_name,m.type as machine_type,
@@ -767,7 +807,7 @@ const REPORT_COLS = `s.id,s.date,s.shift_number,s.start_time,s.end_time,s.status
   COALESCE(SUM(pe.pieces_ok),0) as total_pieces_ok,
   COALESCE(SUM(pe.rejected+pe.pieces_rejected),0) as total_rejected,
   COALESCE(SUM(st.duration_minutes),0) as total_stop_min`;
- 
+
 const REPORT_FROM = `FROM shifts s
   LEFT JOIN operators op ON s.operator_id=op.id
   LEFT JOIN machines m ON s.machine_id=m.id
@@ -776,7 +816,7 @@ const REPORT_FROM = `FROM shifts s
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN production_entries pe ON pe.shift_id=s.id
   LEFT JOIN stoppages st ON st.shift_id=s.id`;
- 
+
 app.get('/api/reports', admin, async (req, res) => {
   try {
     let where = ' WHERE 1=1';
@@ -795,7 +835,7 @@ app.get('/api/reports', admin, async (req, res) => {
     res.json({ rows, total, page, pages, per_page: perPage });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.get('/api/reports/export', admin, async (req, res) => {
   try {
     let sql = `SELECT ${REPORT_COLS} ${REPORT_FROM} WHERE 1=1`;
@@ -819,19 +859,26 @@ app.get('/api/reports/export', admin, async (req, res) => {
     res.send(csv);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // AUDIT LOG
 app.get('/api/audit-log', admin, async (req, res) => {
   try {
     let sql = 'SELECT * FROM audit_log WHERE 1=1';
     const p = [];
+    const whereClause = 'FROM audit_log WHERE 1=1' + (req.query.from ? ` AND created_at::date>=$${p.length+1}` : '');
     if (req.query.from) { sql += ` AND created_at::date>=$${p.length+1}`; p.push(req.query.from); }
     if (req.query.to)   { sql += ` AND created_at::date<=$${p.length+1}`; p.push(req.query.to); }
-    sql += ' ORDER BY created_at DESC LIMIT 200';
-    res.json(await q(sql, p));
+    const page = Math.max(1, Number(req.query.page)||1);
+    const perPage = Math.min(200, Number(req.query.per_page)||100);
+    const offset = (page - 1) * perPage;
+    const countP = [...p];
+    const countRow = await q1(`SELECT COUNT(*) as n FROM audit_log WHERE 1=1${req.query.from?' AND created_at::date>=$1':''}${req.query.to?' AND created_at::date<=$'+(countP.length+1):''}`, countP);
+    const total = Number(countRow?.n || 0);
+    sql += ` ORDER BY created_at DESC LIMIT ${perPage} OFFSET ${offset}`;
+    res.json({ rows: await q(sql, p), total, page, pages: Math.ceil(total/perPage) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // AUTH
 app.post('/api/auth/operator', loginLimiter, async (req, res) => {
   try {
@@ -845,7 +892,7 @@ app.post('/api/auth/operator', loginLimiter, async (req, res) => {
     res.json({ token, operator: { id: op.id, name: op.name, number: op.number, role: op.role||'operator' } });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.post('/api/auth/admin', loginLimiter, async (req, res) => {
   try {
     const { password } = req.body;
@@ -872,7 +919,7 @@ app.post('/api/auth/admin', loginLimiter, async (req, res) => {
     res.json({ token });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 app.put('/api/auth/admin/password', loginLimiter, admin, async (req, res) => {
   try {
     const { current_password, new_password } = req.body;
@@ -891,13 +938,18 @@ app.put('/api/auth/admin/password', loginLimiter, admin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
 // SETTINGS
 app.get('/api/settings', admin, async (req, res) => {
   try { res.json(await q('SELECT key,value,updated_at FROM app_settings')); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
- 
+
+// HEALTH CHECK
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', ts: new Date().toISOString() });
+});
+
 // STARTUP
 initDB()
   .then(() => {
@@ -908,4 +960,3 @@ initDB()
     });
   })
   .catch(err => { console.error('Falha ao inicializar a BD:', err); process.exit(1); });
- 
