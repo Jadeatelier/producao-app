@@ -960,3 +960,4 @@ initDB()
     });
   })
   .catch(err => { console.error('Falha ao inicializar a BD:', err); process.exit(1); });
+
