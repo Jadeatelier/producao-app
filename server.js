@@ -584,7 +584,7 @@ function nowTime() { return new Date().toLocaleTimeString('pt-PT', { hour: '2-di
 const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   po.order_number,po.unit,po.status as order_status,
   r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,r.unit_type as ref_unit_type,
-  po.n_units,
+  po.n_units,po.units_size as order_units_size,
   c.name as color_name,c.code as color_code,c.hex_color,
   m.name as machine_name,m.type as machine_type,m.has_weighing
   FROM shifts s
