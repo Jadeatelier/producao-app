@@ -204,6 +204,10 @@ async function initDB() {
 
   await pool.query('ALTER TABLE operators ADD COLUMN IF NOT EXISTS pin_plain TEXT');
   await pool.query("ALTER TABLE operators ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'operator'");
+  // Colunas adicionadas em v2 — seguras de executar repetidamente
+  await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS start_time TEXT');
+  await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS end_time TEXT');
+  await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS validated BOOLEAN DEFAULT FALSE');
 
   // Migrate plain PINs to encrypted storage if ENCRYPTION_KEY is set
   if (ENCRYPTION_KEY) {
@@ -672,8 +676,8 @@ app.post('/api/production-entries', auth, async (req, res) => {
     const hasValue = (b.rolls_bundles||0)+(b.meters_pieces||0)+(b.pieces_ok||0)+(b.pieces_rejected||0)+(b.rejected||0);
     if (!hasValue) return res.status(400).json({ error: 'Registo em branco: introduz pelo menos um valor.' });
     const r = await q1(
-      'INSERT INTO production_entries(shift_id,color,rolls_bundles,meters_pieces,rejected,active_cavities,counter,pieces_ok,pieces_rejected,finishing,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
-      [b.shift_id, b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null]
+      'INSERT INTO production_entries(shift_id,color,rolls_bundles,meters_pieces,rejected,active_cavities,counter,pieces_ok,pieces_rejected,finishing,notes,start_time,end_time) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
+      [b.shift_id, b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null, b.start_time||null, b.end_time||null]
     );
     res.json({ id: r.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -683,8 +687,8 @@ app.put('/api/production-entries/:id', auth, async (req, res) => {
     const b = req.body;
     const before = await q1('SELECT * FROM production_entries WHERE id=$1', [req.params.id]);
     await pool.query(
-      'UPDATE production_entries SET color=$1,rolls_bundles=$2,meters_pieces=$3,rejected=$4,active_cavities=$5,counter=$6,pieces_ok=$7,pieces_rejected=$8,finishing=$9,notes=$10 WHERE id=$11',
-      [b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null, req.params.id]
+      'UPDATE production_entries SET color=$1,rolls_bundles=$2,meters_pieces=$3,rejected=$4,active_cavities=$5,counter=$6,pieces_ok=$7,pieces_rejected=$8,finishing=$9,notes=$10,start_time=$11,end_time=$12 WHERE id=$13',
+      [b.color||null, b.rolls_bundles||0, b.meters_pieces||0, b.rejected||0, b.active_cavities||null, b.counter||null, b.pieces_ok||0, b.pieces_rejected||0, b.finishing||null, b.notes||null, b.start_time||null, b.end_time||null, req.params.id]
     );
     await logAudit('ENTRY_EDIT', 'production_entry', Number(req.params.id), req.user, {
       before: { rolls: before?.rolls_bundles, meters: before?.meters_pieces, pieces_ok: before?.pieces_ok, rejected: before?.rejected },
@@ -692,6 +696,21 @@ app.put('/api/production-entries/:id', auth, async (req, res) => {
     });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+// QUALITY VALIDATION
+app.put('/api/production-entries/:id/validate', auth, async (req, res) => {
+  try {
+    await pool.query('UPDATE production_entries SET validated=TRUE WHERE id=$1', [req.params.id]);
+    await logAudit('ENTRY_VALIDATE', 'production_entry', Number(req.params.id), req.user, {});
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: dbErr(e) }); }
+});
+app.put('/api/production-entries/:id/unvalidate', auth, async (req, res) => {
+  try {
+    await pool.query('UPDATE production_entries SET validated=FALSE WHERE id=$1', [req.params.id]);
+    await logAudit('ENTRY_UNVALIDATE', 'production_entry', Number(req.params.id), req.user, {});
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: dbErr(e) }); }
 });
 app.delete('/api/production-entries/:id', auth, async (req, res) => {
   try {
@@ -776,6 +795,46 @@ app.get('/api/dashboard', admin, async (req, res) => {
 });
 
 // EFFICIENCY
+// QUALITY ENDPOINTS
+app.get('/api/quality/shifts', auth, async (req, res) => {
+  try {
+    const date = req.query.date || todayStr();
+    const shifts = await q(`SELECT ${SHIFT_COLS} WHERE s.date=$1 ORDER BY m.name, s.shift_number`, [date]);
+    for (const shift of shifts) {
+      shift.entries = await q(
+        `SELECT pe.*, c.name as color_name FROM production_entries pe
+         LEFT JOIN colors c ON pe.color=c.code
+         WHERE pe.shift_id=$1 ORDER BY pe.created_at`,
+        [shift.id]
+      );
+    }
+    res.json(shifts);
+  } catch(e) { res.status(500).json({ error: dbErr(e) }); }
+});
+app.get('/api/quality/daily-report', auth, async (req, res) => {
+  try {
+    const date = req.query.date || todayStr();
+    const entries = await q(
+      `SELECT pe.*, c.name as color_name,
+         s.shift_number, s.date,
+         op.name as operator_name, op.number as operator_number,
+         m.name as machine_name, m.type as machine_type,
+         r.code as ref_code, r.name as ref_name
+       FROM production_entries pe
+       JOIN shifts s ON pe.shift_id=s.id
+       JOIN operators op ON s.operator_id=op.id
+       JOIN machines m ON s.machine_id=m.id
+       LEFT JOIN colors c ON pe.color=c.code
+       LEFT JOIN production_orders po ON s.order_id=po.id
+       LEFT JOIN refs r ON po.reference_id=r.id
+       WHERE s.date=$1 AND pe.validated=TRUE
+       ORDER BY m.name, s.shift_number, pe.created_at`,
+      [date]
+    );
+    res.json(entries);
+  } catch(e) { res.status(500).json({ error: dbErr(e) }); }
+});
+
 app.get('/api/efficiency', admin, async (req, res) => {
   try {
     const from = req.query.from || new Date(Date.now()-30*86400000).toISOString().split('T')[0];
@@ -816,6 +875,94 @@ const REPORT_FROM = `FROM shifts s
   LEFT JOIN colors c ON po.color_id=c.id
   LEFT JOIN production_entries pe ON pe.shift_id=s.id
   LEFT JOIN stoppages st ON st.shift_id=s.id`;
+
+// ANALYTICS (EfficiencyPage)
+app.get('/api/analytics', admin, async (req, res) => {
+  try {
+    const from = req.query.date_from || new Date(Date.now()-30*86400000).toLocaleDateString('sv-SE',{timeZone:'Europe/Lisbon'});
+    const to   = req.query.date_to   || todayStr();
+    const [efficiencyEntries, qualityByMachine, workerPerf] = await Promise.all([
+      q(`SELECT pe.id, s.date, s.shift_number, pe.start_time, pe.end_time,
+           pe.counter, pe.pieces_ok, pe.pieces_rejected,
+           op.name as operator_name, m.name as machine_name, m.type as machine_type,
+           NULL::REAL as cycle_time_seconds
+         FROM production_entries pe
+         JOIN shifts s ON pe.shift_id=s.id
+         JOIN machines m ON s.machine_id=m.id
+         JOIN operators op ON s.operator_id=op.id
+         WHERE s.date>=$1 AND s.date<=$2 AND m.type='injecao'
+         ORDER BY s.date, s.shift_number`, [from, to]),
+      q(`SELECT m.id, m.name as machine_name, m.type as machine_type,
+           COALESCE(SUM(pe.pieces_ok + pe.rolls_bundles),0) as total_ok,
+           COALESCE(SUM(pe.pieces_rejected + pe.rejected),0) as total_rejected
+         FROM machines m
+         LEFT JOIN shifts s ON s.machine_id=m.id AND s.date>=$1 AND s.date<=$2
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         WHERE m.active=1
+         GROUP BY m.id, m.name, m.type ORDER BY m.name`, [from, to]),
+      q(`SELECT op.id, op.name as operator_name, op.number as operator_number,
+           COUNT(DISTINCT s.id) as shift_count,
+           COALESCE(SUM(pe.pieces_ok),0) as total_ok,
+           COALESCE(SUM(pe.pieces_rejected),0) as total_rejected
+         FROM operators op
+         JOIN shifts s ON s.operator_id=op.id AND s.date>=$1 AND s.date<=$2
+         JOIN machines m ON s.machine_id=m.id
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         WHERE m.type='injecao'
+         GROUP BY op.id, op.name, op.number ORDER BY total_ok DESC`, [from, to])
+    ]);
+    res.json({ efficiencyEntries, qualityByMachine, workerPerf });
+  } catch(e) { res.status(500).json({ error: dbErr(e) }); }
+});
+
+// PRODUCTION PROGRESS (ProductionAnalysisPage)
+app.get('/api/production-progress', admin, async (req, res) => {
+  try {
+    const to   = todayStr();
+    const from = new Date(Date.now()-14*86400000).toLocaleDateString('sv-SE',{timeZone:'Europe/Lisbon'});
+    const [daily, stopReasons, orderDaily, orders] = await Promise.all([
+      q(`SELECT s.date,
+           COALESCE(SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE 0 END),0) as ext_meters,
+           COALESCE(SUM(CASE WHEN m.type='injecao' THEN pe.pieces_ok ELSE 0 END),0) as inj_pieces,
+           COALESCE(SUM(pe.rejected + pe.pieces_rejected),0) as rejected
+         FROM shifts s
+         JOIN machines m ON s.machine_id=m.id
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         WHERE s.date>=$1 AND s.date<=$2
+         GROUP BY s.date ORDER BY s.date`, [from, to]),
+      q(`SELECT sc.code, sc.description, COUNT(*) as cnt, COALESCE(SUM(st.duration_minutes),0) as total_min
+         FROM stoppages st
+         JOIN stoppage_codes sc ON st.stoppage_code_id=sc.id
+         JOIN shifts s ON st.shift_id=s.id
+         WHERE s.date>=$1 AND s.date<=$2
+         GROUP BY sc.code, sc.description ORDER BY total_min DESC LIMIT 10`, [from, to]),
+      q(`SELECT po.order_number, s.date,
+           COALESCE(SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE pe.pieces_ok END),0) as produced
+         FROM production_orders po
+         JOIN shifts s ON s.order_id=po.id
+         JOIN machines m ON s.machine_id=m.id
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         WHERE s.date>=$1 AND s.date<=$2 AND po.status IN ('active','pending')
+         GROUP BY po.order_number, s.date ORDER BY s.date`, [from, to]),
+      q(`SELECT po.id, po.order_number, po.quantity, po.unit, po.status,
+           r.code as ref_code, r.name as ref_name,
+           COALESCE(SUM(CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE pe.pieces_ok END),0) as produced,
+           COALESCE(SUM(CASE WHEN s.date=$3 THEN CASE WHEN m.type='extrusao' THEN pe.meters_pieces ELSE pe.pieces_ok END ELSE 0 END),0) as produced_today,
+           COALESCE(SUM(CASE WHEN st2.shift_id IS NOT NULL AND s.date=$3 THEN st2.duration_minutes ELSE 0 END),0) as stop_min_today,
+           COUNT(DISTINCT CASE WHEN s.status='open' THEN s.id END) as open_shifts
+         FROM production_orders po
+         LEFT JOIN refs r ON po.reference_id=r.id
+         LEFT JOIN shifts s ON s.order_id=po.id
+         LEFT JOIN machines m ON s.machine_id=m.id
+         LEFT JOIN production_entries pe ON pe.shift_id=s.id
+         LEFT JOIN stoppages st2 ON st2.shift_id=s.id
+         WHERE po.status IN ('active','pending')
+         GROUP BY po.id, po.order_number, po.quantity, po.unit, po.status, r.code, r.name
+         ORDER BY po.order_number`, [from, to, to])
+    ]);
+    res.json({ daily, stopReasons, orderDaily, orders });
+  } catch(e) { res.status(500).json({ error: dbErr(e) }); }
+});
 
 app.get('/api/reports', admin, async (req, res) => {
   try {
