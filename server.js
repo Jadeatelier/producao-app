@@ -208,6 +208,9 @@ async function initDB() {
   await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS start_time TEXT');
   await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS end_time TEXT');
   await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS validated BOOLEAN DEFAULT FALSE');
+  // Colunas adicionadas em v3
+  await pool.query("ALTER TABLE refs ADD COLUMN IF NOT EXISTS unit_type TEXT DEFAULT 'rolos'");
+  await pool.query('ALTER TABLE production_orders ADD COLUMN IF NOT EXISTS n_units INTEGER');
 
   // Migrate plain PINs to encrypted storage if ENCRYPTION_KEY is set
   if (ENCRYPTION_KEY) {
@@ -307,15 +310,14 @@ app.get('/api/operators/public', async (req, res) => {
 });
 app.get('/api/operators', admin, async (req, res) => {
   try { const ops = await q('SELECT id,name,number,role,pin_plain,active,created_at FROM operators ORDER BY name');
-    // PIN mascarado: mostra apenas '****' — nunca expor PINs em texto claro via API
-    res.json(ops.map(o=>({...o, pin: o.pin_plain ? '****' : null, pin_plain:undefined}))); }
+    res.json(ops.map(o=>({...o, pin: o.pin_plain ? (decrypt(o.pin_plain)||o.pin_plain) : null, pin_plain:undefined}))); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/operators', admin, async (req, res) => {
   try {
     const b = req.body;
     const r = await q1('INSERT INTO operators(name,number,pin_hash,pin_plain,role) VALUES($1,$2,$3,$4,$5) RETURNING id',
-      [b.name, b.number, bcrypt.hashSync(String(b.pin), 10), encrypt(String(b.pin)), b.role||'operator']);
+      [b.name, b.number, bcrypt.hashSync(String(b.pin), 10), ENCRYPTION_KEY ? encrypt(String(b.pin)) : String(b.pin), b.role||'operator']);
     await logAudit('OPERATOR_CREATE', 'operator', r.id, req.user, { name: b.name, number: b.number });
     res.json({ id: r.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -325,7 +327,7 @@ app.put('/api/operators/:id', admin, async (req, res) => {
     const b = req.body;
     if (b.pin) {
       await pool.query('UPDATE operators SET name=$1,number=$2,pin_hash=$3,pin_plain=$4,role=$5,active=$6 WHERE id=$7',
-        [b.name, b.number, bcrypt.hashSync(String(b.pin),10), encrypt(String(b.pin)), b.role||'operator', b.active?1:0, req.params.id]);
+        [b.name, b.number, bcrypt.hashSync(String(b.pin),10), ENCRYPTION_KEY ? encrypt(String(b.pin)) : String(b.pin), b.role||'operator', b.active?1:0, req.params.id]);
     } else {
       await pool.query('UPDATE operators SET name=$1,number=$2,role=$3,active=$4 WHERE id=$5',
         [b.name, b.number, b.role||'operator', b.active?1:0, req.params.id]);
@@ -364,16 +366,16 @@ app.get('/api/references', auth, async (req, res) => {
 app.post('/api/references', admin, async (req, res) => {
   try {
     const b = req.body;
-    const r = await q1('INSERT INTO refs(code,name,machine_type,raw_material,weight_per_ml,weight_per_piece,notes) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',
-      [b.code, b.name, b.machine_type, b.raw_material||null, b.weight_per_ml||null, b.weight_per_piece||null, b.notes||null]);
+    const r = await q1('INSERT INTO refs(code,name,machine_type,raw_material,weight_per_ml,weight_per_piece,notes,unit_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
+      [b.code, b.name, b.machine_type, b.raw_material||null, b.weight_per_ml||null, b.weight_per_piece||null, b.notes||null, b.unit_type||'rolos']);
     res.json({ id: r.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.put('/api/references/:id', admin, async (req, res) => {
   try {
     const b = req.body;
-    await pool.query('UPDATE refs SET code=$1,name=$2,machine_type=$3,raw_material=$4,weight_per_ml=$5,weight_per_piece=$6,notes=$7,active=$8 WHERE id=$9',
-      [b.code, b.name, b.machine_type, b.raw_material||null, b.weight_per_ml||null, b.weight_per_piece||null, b.notes||null, b.active?1:0, req.params.id]);
+    await pool.query('UPDATE refs SET code=$1,name=$2,machine_type=$3,raw_material=$4,weight_per_ml=$5,weight_per_piece=$6,notes=$7,active=$8,unit_type=$9 WHERE id=$10',
+      [b.code, b.name, b.machine_type, b.raw_material||null, b.weight_per_ml||null, b.weight_per_piece||null, b.notes||null, b.active?1:0, b.unit_type||'rolos', req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -550,8 +552,8 @@ app.delete('/api/orders/:id', admin, async (req, res) => {
 app.post('/api/orders', admin, async (req, res) => {
   try {
     const b = req.body;
-    const r = await q1('INSERT INTO production_orders(order_number,reference_id,color_id,machine_id,quantity,unit,mp_phases,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
-      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', JSON.stringify(b.mp_phases||[]), b.notes||null]);
+    const r = await q1('INSERT INTO production_orders(order_number,reference_id,color_id,machine_id,quantity,unit,n_units,mp_phases,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
+      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', b.n_units||null, JSON.stringify(b.mp_phases||[]), b.notes||null]);
     await logAudit('ORDER_CREATE', 'order', r.id, req.user, { order_number: b.order_number });
     res.json({ id: r.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -559,8 +561,8 @@ app.post('/api/orders', admin, async (req, res) => {
 app.put('/api/orders/:id', admin, async (req, res) => {
   try {
     const b = req.body;
-    await pool.query('UPDATE production_orders SET order_number=$1,reference_id=$2,color_id=$3,machine_id=$4,quantity=$5,unit=$6,mp_phases=$7,notes=$8,status=$9 WHERE id=$10',
-      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', JSON.stringify(b.mp_phases||[]), b.notes||null, b.status||'active', req.params.id]);
+    await pool.query('UPDATE production_orders SET order_number=$1,reference_id=$2,color_id=$3,machine_id=$4,quantity=$5,unit=$6,n_units=$7,mp_phases=$8,notes=$9,status=$10 WHERE id=$11',
+      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', b.n_units||null, JSON.stringify(b.mp_phases||[]), b.notes||null, b.status||'active', req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -580,7 +582,8 @@ function nowTime() { return new Date().toLocaleTimeString('pt-PT', { hour: '2-di
 
 const SHIFT_COLS = `s.*,op.name as operator_name,op.number as operator_number,
   po.order_number,po.unit,po.status as order_status,
-  r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,
+  r.code as ref_code,r.name as ref_name,r.weight_per_ml,r.weight_per_piece,r.unit_type as ref_unit_type,
+  po.n_units,
   c.name as color_name,c.code as color_code,c.hex_color,
   m.name as machine_name,m.type as machine_type,m.has_weighing
   FROM shifts s
@@ -1107,4 +1110,3 @@ initDB()
     });
   })
   .catch(err => { console.error('Falha ao inicializar a BD:', err); process.exit(1); });
-
