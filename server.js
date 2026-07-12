@@ -211,6 +211,7 @@ async function initDB() {
   // Colunas adicionadas em v3
   await pool.query("ALTER TABLE refs ADD COLUMN IF NOT EXISTS unit_type TEXT DEFAULT 'rolos'");
   await pool.query('ALTER TABLE production_orders ADD COLUMN IF NOT EXISTS n_units INTEGER');
+  await pool.query('ALTER TABLE production_orders ADD COLUMN IF NOT EXISTS units_size REAL');
 
   // Migrate plain PINs to encrypted storage if ENCRYPTION_KEY is set
   if (ENCRYPTION_KEY) {
@@ -552,8 +553,8 @@ app.delete('/api/orders/:id', admin, async (req, res) => {
 app.post('/api/orders', admin, async (req, res) => {
   try {
     const b = req.body;
-    const r = await q1('INSERT INTO production_orders(order_number,reference_id,color_id,machine_id,quantity,unit,n_units,mp_phases,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
-      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', b.n_units||null, JSON.stringify(b.mp_phases||[]), b.notes||null]);
+    const r = await q1('INSERT INTO production_orders(order_number,reference_id,color_id,machine_id,quantity,unit,n_units,units_size,mp_phases,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',
+      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', b.n_units||null, b.units_size||null, JSON.stringify(b.mp_phases||[]), b.notes||null]);
     await logAudit('ORDER_CREATE', 'order', r.id, req.user, { order_number: b.order_number });
     res.json({ id: r.id });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -561,8 +562,8 @@ app.post('/api/orders', admin, async (req, res) => {
 app.put('/api/orders/:id', admin, async (req, res) => {
   try {
     const b = req.body;
-    await pool.query('UPDATE production_orders SET order_number=$1,reference_id=$2,color_id=$3,machine_id=$4,quantity=$5,unit=$6,n_units=$7,mp_phases=$8,notes=$9,status=$10 WHERE id=$11',
-      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', b.n_units||null, JSON.stringify(b.mp_phases||[]), b.notes||null, b.status||'active', req.params.id]);
+    await pool.query('UPDATE production_orders SET order_number=$1,reference_id=$2,color_id=$3,machine_id=$4,quantity=$5,unit=$6,n_units=$7,units_size=$8,mp_phases=$9,notes=$10,status=$11 WHERE id=$12',
+      [b.order_number, b.reference_id||null, b.color_id||null, b.machine_id||null, b.quantity||null, b.unit||'pecas', b.n_units||null, b.units_size||null, JSON.stringify(b.mp_phases||[]), b.notes||null, b.status||'active', req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
